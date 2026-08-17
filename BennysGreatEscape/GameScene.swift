@@ -58,6 +58,16 @@ private enum Layout {
     /// forgiving without feeling floaty.
     static let jumpHeight: CGFloat = 140
 
+    /// Underside of a low rail, above the turf. Has to sit below the 44pt
+    /// running box or Benny would stroll under it untouched, and above the 26pt
+    /// ducked box or sliding wouldn't save him. 34 leaves margin both ways.
+    static let railClearance: CGFloat = 34
+
+    /// A slide covers this much ground rather than lasting a fixed time — at
+    /// the top scroll speed a fixed duration would end before the rail had
+    /// finished passing. Rail plus dog is about 150, so this leaves margin.
+    static let slideDistance: CGFloat = 260
+
     /// Thick dark outlines are most of what makes flat shapes read as cartoon.
     static let outline: CGFloat = 4
 }
@@ -78,6 +88,9 @@ private enum DogArt {
     /// The jump arc — bound, rear up, two airborne poses, reach down, land.
     /// Loaded the same way, so extra frames are a pure asset drop here too.
     static let jumpFrames: [SKTexture] = load("benny_jump")
+
+    /// The slide — drop, slide, deep slide, recover.
+    static let slideFrames: [SKTexture] = load("benny_slide")
 
     private static func load(_ prefix: String) -> [SKTexture] {
         var textures: [SKTexture] = []
@@ -121,6 +134,18 @@ private enum DogArt {
     /// way that dangle simply hangs below the anchor, which is exactly where it
     /// belongs once the physics has lifted him.
     static let groundLineFraction: CGFloat = 0.263
+
+    /// The ducked box, measured off the slide poses the same way. Notably the
+    /// slide frames are aligned on the *ground* rather than the collar — a
+    /// sliding dog's head drops, and pinning his collar to the running collar
+    /// would cancel exactly the crouch that makes ducking work.
+    ///
+    /// 26pt tall against 44pt running, so a rail at `Layout.railClearance` is
+    /// hit standing and cleared sliding. Slightly narrower than the drawing, so
+    /// a trailing paw brushing an obstacle doesn't end the run.
+    static let slideWidthFraction: CGFloat = 0.80
+    static let slideHeightFraction: CGFloat = 0.362
+    static let slideOffsetXFraction: CGFloat = 0.030
 }
 
 private enum Palette {
@@ -157,6 +182,18 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// player taps to begin. A live backdrop makes a far better first frame
     /// than a still, and it costs nothing since the scene is already built.
     private var hasStarted = false
+
+    // Swipe tracking
+    private var touchOrigin: CGPoint?
+    private var gestureResolved = false
+
+    /// Sliding is a timed action rather than a hold, so it can end itself.
+    private var isSliding = false
+
+    /// Reported so the SwiftUI layer can show the "swipe down" hint the first
+    /// time a rail actually appears, rather than up front where it means little.
+    var onFirstRail: (() -> Void)?
+    private var hasSpawnedRail = false
 
     /// Driven by ground contacts rather than inferred from velocity. Velocity
     /// passes through zero at the apex of every jump, so testing `vy ≈ 0` would
@@ -369,26 +406,34 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // include the tail, the snout and the empty sky above his back. Offset
         // so the box's *bottom* lands on the drawing's bottom — otherwise Benny
         // floats above the turf or sinks into it.
-        let torso = CGSize(
-            width: size.width * DogArt.bodyWidthFraction,
-            height: size.height * DogArt.bodyHeightFraction
-        )
-        let physics = SKPhysicsBody(
-            rectangleOf: torso,
-            center: CGPoint(
-                x: size.width * DogArt.bodyOffsetXFraction,
-                y: (torso.height - size.height) / 2
-            )
-        )
-        physics.categoryBitMask = PhysicsCategory.dog
-        physics.contactTestBitMask = PhysicsCategory.obstacle | PhysicsCategory.ground
-        physics.collisionBitMask = PhysicsCategory.ground
-        physics.restitution = 0
-        physics.allowsRotation = false
-        physics.friction = 0
-        node.physicsBody = physics
+        node.physicsBody = makeDogPhysics(ducked: false)
 
         return node
+    }
+
+    /// Standing and ducked share a shape: a box whose bottom sits on the paw
+    /// line. A fresh body inherits none of the masks, so they're reapplied here
+    /// rather than at each call site.
+    private func makeDogPhysics(ducked: Bool) -> SKPhysicsBody {
+        let size = Layout.dogSize
+        let box = CGSize(
+            width: size.width * (ducked ? DogArt.slideWidthFraction : DogArt.bodyWidthFraction),
+            height: size.height * (ducked ? DogArt.slideHeightFraction : DogArt.bodyHeightFraction)
+        )
+        let body = SKPhysicsBody(
+            rectangleOf: box,
+            center: CGPoint(
+                x: size.width * (ducked ? DogArt.slideOffsetXFraction : DogArt.bodyOffsetXFraction),
+                y: (box.height - size.height) / 2
+            )
+        )
+        body.categoryBitMask = PhysicsCategory.dog
+        body.contactTestBitMask = PhysicsCategory.obstacle | PhysicsCategory.ground
+        body.collisionBitMask = PhysicsCategory.ground
+        body.restitution = 0
+        body.allowsRotation = false
+        body.friction = 0
+        return body
     }
 
     /// The drawing, anchored at its feet. Squash and stretch then pivots from
@@ -459,15 +504,121 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     // MARK: - Input
 
+    /// Swipe up to jump, swipe down to slide.
+    ///
+    /// The direction is resolved as soon as the finger crosses a small
+    /// threshold rather than on lift-off — waiting for touch-up would put about
+    /// a tenth of a second on the game's core verb.
+    ///
+    /// A plain tap does nothing on purpose. Falling back to a jump would mean a
+    /// short or lazy down-swipe launches Benny into the very rail he was trying
+    /// to duck, which is the worst way to lose a run.
+    private static let swipeThreshold: CGFloat = 24
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if isGameOver {
+        guard !isGameOver else {
             restart()
-        } else {
+            return
+        }
+        guard let touch = touches.first else { return }
+        touchOrigin = touch.location(in: self)
+        gestureResolved = false
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard !isGameOver, !gestureResolved,
+              let touch = touches.first, let origin = touchOrigin else { return }
+
+        let dy = touch.location(in: self).y - origin.y
+        guard abs(dy) >= Self.swipeThreshold else { return }
+
+        gestureResolved = true
+        if dy > 0 {
             jump()
+        } else {
+            slide()
         }
     }
 
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        touchOrigin = nil
+        gestureResolved = false
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        touchOrigin = nil
+        gestureResolved = false
+    }
+
+    /// Drops Benny flat for a fixed *distance* of ground. A fixed duration
+    /// would clear a rail at the opening speed and fall short at the top one.
+    private func slide() {
+        guard isOnGround, !isSliding, !DogArt.slideFrames.isEmpty else { return }
+        isSliding = true
+
+        setDucked(true)
+
+        // Dirt kicking up for the whole slide. The pose change alone is hard to
+        // read at this size — the dust is what actually says "sliding".
+        dog.run(
+            .repeatForever(.sequence([
+                .run { [weak self] in self?.puffDust(behind: 6, scale: 1.5) },
+                .wait(forDuration: 0.1),
+            ])),
+            withKey: "slideDust"
+        )
+
+        let frames = DogArt.slideFrames
+        let total = TimeInterval(Layout.slideDistance / gameSpeed)
+        let entry: TimeInterval = 0.06
+        let recover: TimeInterval = 0.10
+        let hold = max(0.08, total - entry * 2 - recover)
+
+        var steps: [SKAction] = []
+        for texture in frames.prefix(2) {
+            steps.append(.setTexture(texture))
+            steps.append(.wait(forDuration: entry))
+        }
+        if frames.count > 2 {
+            steps.append(.setTexture(frames[2]))
+            steps.append(.wait(forDuration: hold))
+        }
+        if frames.count > 3 {
+            steps.append(.setTexture(frames[3]))
+            steps.append(.wait(forDuration: recover))
+        }
+        steps.append(.run { [weak self] in self?.endSlide() })
+
+        dog.childNode(withName: "body")?.removeAction(forKey: "gait")
+        dog.childNode(withName: "body")?.run(.sequence(steps), withKey: "gait")
+    }
+
+    private func endSlide() {
+        guard isSliding else { return }
+        isSliding = false
+        dog.removeAction(forKey: "slideDust")
+        setDucked(false)
+        guard let body = dog.childNode(withName: "body"), DogArt.frames.count > 1 else { return }
+        body.removeAction(forKey: "gait")
+        body.run(gallop, withKey: "gait")
+    }
+
+    /// Swaps the hitbox between standing and ducked.
+    ///
+    /// The old body's `didEnd` never arrives, so the ground contact count would
+    /// creep up with every slide — and once it's above one, the count never
+    /// reaches zero in mid-air and `isOnGround` stays true, handing out free
+    /// double jumps. Since a swap only ever happens with his feet down, pinning
+    /// the count back to exactly one is both safe and correct.
+    private func setDucked(_ ducked: Bool) {
+        dog.physicsBody = makeDogPhysics(ducked: ducked)
+        groundContacts = 1
+    }
+
     private func jump() {
+        // Swiping up out of a slide cancels it — standing back up mid-air would
+        // otherwise leave the ducked hitbox on while he's clearly upright.
+        if isSliding { endSlide() }
         guard isOnGround else { return }
         // Velocity is set directly from the desired apex rather than applying an
         // impulse, which would depend on the body's mass — and therefore on the
@@ -515,12 +666,15 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         ]), withKey: "squash")
     }
 
-    private func puffDust() {
-        let puff = SKShapeNode(circleOfRadius: 6)
+    private func puffDust(behind: CGFloat = 20, scale: CGFloat = 1) {
+        let puff = SKShapeNode(circleOfRadius: 6 * scale)
         puff.fillColor = .white
         puff.strokeColor = .clear
         puff.alpha = 0.9
-        puff.position = CGPoint(x: Layout.dogX - 20, y: Layout.groundTop + 5)
+        puff.position = CGPoint(
+            x: Layout.dogX - behind + CGFloat.random(in: -4...4),
+            y: Layout.groundTop + 5
+        )
         puff.zPosition = 9
         addChild(puff)
         puff.run(.sequence([
@@ -536,7 +690,20 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Obstacles
 
     private func spawnObstacle() {
-        let obstacle = Bool.random() ? makeLog() : makeBush()
+        // Rails stay the minority — they're the newer verb, and a run that's
+        // mostly ducking loses the rhythm of jumping. They also hold off until
+        // a few obstacles in, so the first thing anyone meets is a jump.
+        let wantsRail = score >= 2 && DogArt.slideFrames.count > 1 && Int.random(in: 0..<10) < 3
+        let obstacle: SKNode
+        if wantsRail {
+            obstacle = makeRail()
+            if !hasSpawnedRail {
+                hasSpawnedRail = true
+                onFirstRail?()
+            }
+        } else {
+            obstacle = Bool.random() ? makeLog() : makeBush()
+        }
         obstacle.position = CGPoint(x: Layout.sceneSize.width + 60, y: Layout.groundTop)
         obstacle.zPosition = 8
         obstacle.name = "obstacle"
@@ -594,6 +761,53 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         return node
     }
 
+    /// A low rail on two posts — the obstacle you duck rather than jump.
+    ///
+    /// Placeholder, drawn in the same style as the logs and bushes until the
+    /// painted fence art lands; swapping it for a sprite is a change to this
+    /// function alone.
+    private func makeRail() -> SKNode {
+        let node = SKNode()
+        let span: CGFloat = 96
+        let railHeight: CGFloat = 20
+        let postWidth: CGFloat = 16
+        let postTop = Layout.railClearance + railHeight
+
+        // Posts are decoration only. They stand on the turf either side, so
+        // giving them bodies would make the rail impossible to get past —
+        // letting Benny slide between them is the usual 2D shorthand.
+        for dx in [-span / 2, span / 2] {
+            let post = SKShapeNode(
+                rect: CGRect(x: dx - postWidth / 2, y: 0, width: postWidth, height: postTop),
+                cornerRadius: 5
+            )
+            post.fillColor = Palette.log
+            post.strokeColor = Palette.ink
+            post.lineWidth = Layout.outline
+            node.addChild(post)
+        }
+
+        let rail = SKShapeNode(
+            rect: CGRect(x: -span / 2 - 4, y: Layout.railClearance, width: span + 8, height: railHeight),
+            cornerRadius: 6
+        )
+        rail.fillColor = Palette.log
+        rail.strokeColor = Palette.ink
+        rail.lineWidth = Layout.outline
+        node.addChild(rail)
+
+        let body = SKPhysicsBody(
+            rectangleOf: CGSize(width: span + 8, height: railHeight),
+            center: CGPoint(x: 0, y: Layout.railClearance + railHeight / 2)
+        )
+        body.isDynamic = false
+        body.categoryBitMask = PhysicsCategory.obstacle
+        body.contactTestBitMask = PhysicsCategory.dog
+        node.physicsBody = body
+
+        return node
+    }
+
     private static func obstacleBody(size: CGSize) -> SKPhysicsBody {
         let body = SKPhysicsBody(rectangleOf: size, center: CGPoint(x: 0, y: size.height / 2))
         body.isDynamic = false
@@ -622,7 +836,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // Grounded only. The jump arc is already timed to the airtime, so
         // scaling it too would run it ~1.7x fast at the top scroll speed and
         // leave him holding the landing pose for most of the flight.
-        dog.childNode(withName: "body")?.speed = isOnGround ? gameSpeed / 220 : 1
+        // Grounded and running only. The jump arc is timed to the airtime and
+        // the slide to a distance, so both already account for `gameSpeed` —
+        // scaling them again here would cut them short at the top speed.
+        dog.childNode(withName: "body")?.speed = (isOnGround && !isSliding) ? gameSpeed / 220 : 1
 
         // Everything above keeps the title screen alive; everything below is the
         // game proper and waits for the first tap.
@@ -668,7 +885,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         if categories == (PhysicsCategory.dog | PhysicsCategory.ground) {
             groundContacts += 1
-            if !isGameOver {
+            // Not while sliding. Swapping in the ducked body makes the ground
+            // report a fresh contact, and landing back into a gallop here would
+            // wipe the slide a frame or two after it started — which is exactly
+            // what made the slide impossible to see.
+            if !isGameOver, !isSliding {
                 squash(xScale: 1.2, yScale: 0.8)
                 puffDust()
                 // Back to running. The jump arc is a one-shot, so without this
@@ -725,11 +946,21 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         hasStarted = true
     }
 
+    /// Winds the world back to its opening state and stops play, so the title
+    /// screen has a fresh run waiting behind it rather than a half-finished one.
+    func returnToTitle() {
+        restart()
+        hasStarted = false
+    }
+
     private func restart() {
         removeAllChildren()
 
         score = 0
         isGameOver = false
+        isSliding = false
+        touchOrigin = nil
+        gestureResolved = false
         groundContacts = 0
         obstacleTimer = 0
         obstacleInterval = 1.8

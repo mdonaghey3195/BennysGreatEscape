@@ -33,14 +33,17 @@ struct TitleView: View {
                 target(Art.about, in: size) { showingAbout = true }
                     .accessibilityLabel("About")
 
-                if bestScore > 0 {
+                /*if bestScore > 0 {
                     bestLabel(in: size)
-                }
+                }*/
             }
             .frame(width: size.width, height: size.height)
         }
         .ignoresSafeArea()
-        .sheet(isPresented: $showingAbout) {
+        // Full screen rather than a sheet: a card inset from the top with the
+        // title screen peeking round it is exactly the stock-iOS look this
+        // page is meant to avoid.
+        .fullScreenCover(isPresented: $showingAbout) {
             AboutView(bestScore: bestScore)
         }
     }
