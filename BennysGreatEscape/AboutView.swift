@@ -46,7 +46,7 @@ struct AboutView: View {
         VStack(spacing: 0) {
             heading
 
-            Text("Benny's Great Escape is a paws-itively fun endless runner where you help Benny the beagle jump and dash his way past logs, bushes and whatever else the countryside throws at him.")
+            Text("Benny's Great Escape is a paws-itively fun endless runner where you help Benny the beagle jump and dash his way past logs, bushes, tree stumps and whatever else the countryside throws at him.")
                 .aboutBody()
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
