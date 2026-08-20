@@ -28,6 +28,11 @@ struct GameView: View {
     // Each control is taught once, ever.
     @AppStorage("seenJumpHint") private var seenJumpHint = false
     @AppStorage("seenSlideHint") private var seenSlideHint = false
+
+    /// Set on the Settings page; read here only to tell `Music` about it at
+    /// launch. Deliberately separate from whether the game currently wants
+    /// music — see `Music`.
+    @AppStorage("musicOn") private var musicOn = true
     @State private var hint: Hint?
 
     private enum Hint {
@@ -58,9 +63,14 @@ struct GameView: View {
         }
         .statusBarHidden()
         .onAppear {
+            Music.shared.isEnabled = musicOn
             scene.onScoreChange = { score = $0 }
-            scene.onGameOver = { bestScore = max(bestScore, $0) }
-            scene.onFirstRail = {
+            scene.onGameOver = {
+                bestScore = max(bestScore, $0)
+                Music.shared.duck()
+            }
+            scene.onRetry = { Music.shared.unduck() }
+            scene.onFirstLowObstacle = {
                 guard !seenSlideHint else { return }
                 seenSlideHint = true
                 show(.slide)
@@ -90,6 +100,7 @@ struct GameView: View {
 
     private func start() {
         scene.start()
+        Music.shared.play()
         withAnimation(.easeOut(duration: 0.35)) { hasStarted = true }
         if !seenJumpHint {
             seenJumpHint = true
@@ -101,6 +112,7 @@ struct GameView: View {
     /// the next Play is a fresh run rather than resuming a half-finished one.
     private func returnToTitle() {
         scene.returnToTitle()
+        Music.shared.stop()
         score = 0
         withAnimation(.easeOut(duration: 0.3)) { hasStarted = false }
     }

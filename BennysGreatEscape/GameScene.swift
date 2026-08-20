@@ -5,9 +5,9 @@
 //  Benny gallops, you tap to jump, the logs, bushes and stumps keep coming.
 //
 //  The world is drawn entirely in code — gradient sky, parallax clouds and
-//  hills, scrolling turf. The painted art in the asset catalogue is Benny
-//  himself (a gallop, a jump arc and a slide) and the three things he jumps.
-//  The low rail he ducks under is still drawn in code.
+//  hills, scrolling turf. Everything you actually play against is painted and
+//  lives in the asset catalogue: Benny himself (a gallop, a jump arc and a
+//  slide), the three things he jumps, and the bench he ducks under.
 //
 
 import SpriteKit
@@ -44,7 +44,7 @@ private enum Layout {
     /// fixed size whatever Benny's doing — matching canvas widths would shrink
     /// him, because the gallop poses stretch the canvas without making the dog
     /// any bigger.
-    static let dogWidth: CGFloat = 100
+    static let dogWidth: CGFloat = 125
 
     /// Height follows the artwork's aspect so Benny is never stretched, and
     /// keeps following it if the drawing is ever replaced with one shaped
@@ -55,35 +55,76 @@ private enum Layout {
 
     static let dogX: CGFloat = 120
 
-    /// Apex of a jump above `groundTop`. Obstacles top out around 58, so this is
+    /// Where a run starts. This is what caps the obstacle sizes in
+    /// `ObstacleArt`: a jump lasts a fixed time, so the slowest the world ever
+    /// moves is the least ground a jump ever covers, and everything has to be
+    /// clearable there.
+    ///
+    /// It rose with Benny. The world scrolled at 220 when he was 80pt wide, and
+    /// leaving it there while he grew made the game feel steadily more sluggish
+    /// against him — and held the things he jumps down to toys beside him.
+    static let openingSpeed: CGFloat = 280
+
+    /// Where the ramp tops out. Held 160 above the opening, as it always has
+    /// been, so a run still accelerates over its first 40 obstacles.
+    static let topSpeed: CGFloat = 440
+
+    /// Apex of a jump above `groundTop`. Obstacles top out around 78, so this is
     /// forgiving without feeling floaty.
     ///
     /// Height isn't the binding constraint, though — width is. A jump lasts a
-    /// fixed time, so at the opening scroll speed it covers only ~210pt, and an
+    /// fixed time, so at the opening scroll speed it covers only ~289pt, and an
     /// obstacle's box plus Benny's own has to fit inside the stretch of that arc
     /// spent above it. That is what caps the obstacle sizes in `ObstacleArt`.
     ///
-    /// Which is why this rose with `dogWidth`: a wider dog spends more of that
-    /// stretch on himself, and at 140 a full-height log left barely a point to
-    /// spare. It can't rise much further either — see the spawn interval floor
-    /// in `update`, which the airtime has to stay under.
-    static let jumpHeight: CGFloat = 155
+    /// Which is why this rises with `dogWidth`: a wider dog spends more of that
+    /// stretch on himself, and left alone a full-height log goes from clearable
+    /// to impossible. Every 25% on Benny has cost about 25pt here. It drags the
+    /// spawn interval floor in `update` up with it, which the airtime has to
+    /// stay under — and with the floor where it is, this is as high as it can
+    /// go. Buying clearance beyond here means `Layout.openingSpeed`, not this.
+    static let jumpHeight: CGFloat = 180
 
-    /// How far the painted obstacles are sunk into the turf. Each drawing has a
-    /// tuft of grass along its base; standing them exactly on `groundTop` leaves
-    /// that grass sitting on the turf as a visible seam, and a few points down
-    /// is enough for it to read as growing out of it.
-    static let obstacleSink: CGFloat = 5
+    /// How far a painted obstacle is pushed below the turf line by default.
+    ///
+    /// Has to clear the 8pt dark cut-turf edge drawn by `makeGround`, not just
+    /// `groundTop`: obstacles draw over the ground, so a shallower sink leaves
+    /// the pale highlight along the bottom of each drawing's grass sitting on
+    /// top of that dark band, and the obstacle reads as resting on the ground
+    /// rather than growing out of it. Individual pieces override it — how much
+    /// painted grass there is to bury differs per drawing.
+    static let obstacleSink: CGFloat = 12
 
-    /// Underside of a low rail, above the turf. Has to sit below the 55pt
-    /// running box or Benny would stroll under it untouched, and above the 33pt
-    /// ducked box or sliding wouldn't save him. 42 leaves margin both ways.
-    static let railClearance: CGFloat = 42
+    /// The same idea for Benny, and the reason he isn't left standing on a
+    /// ledge now that everything else is planted deeper.
+    ///
+    /// Shallower than `obstacleSink` because his paws *are* his contact point,
+    /// where an obstacle's drawing carries a skirt of grass below its own. The
+    /// 5pt difference between the two is the gap that has always existed here,
+    /// back when it was 5 and 0 — this keeps it while moving both down.
+    ///
+    /// Unlike the obstacles' sink this moves his physics as well as his
+    /// drawing: the ground edge he rests on comes down with him, so the art
+    /// never disagrees with the box about where the floor is.
+    static let dogPlantDepth: CGFloat = 7
+
+    /// Where Benny's paws and every obstacle's base actually come to rest, as
+    /// against `groundTop`, which is where the turf is *drawn*.
+    static var dogGroundLine: CGFloat { groundTop - dogPlantDepth }
+
+    /// How much room a sliding dog needs: the underside of the bench seat,
+    /// above where Benny stands. Has to sit below the 68pt running box or Benny would
+    /// stroll under it untouched, and above the 41pt ducked box or sliding
+    /// wouldn't save him. 52 leaves margin both ways.
+    ///
+    /// The bench is sized *from* this rather than the other way round, so the
+    /// one number that decides whether ducking works can be retuned on its own.
+    static let duckClearance: CGFloat = 52
 
     /// A slide covers this much ground rather than lasting a fixed time — at
-    /// the top scroll speed a fixed duration would end before the rail had
-    /// finished passing. Rail plus dog is about 205, so this leaves margin.
-    static let slideDistance: CGFloat = 300
+    /// the top scroll speed a fixed duration would end before the bench had
+    /// finished passing. Bench plus dog is about 330, so this leaves margin.
+    static let slideDistance: CGFloat = 400
 
     /// Thick dark outlines are most of what makes flat shapes read as cartoon.
     static let outline: CGFloat = 4
@@ -157,7 +198,7 @@ private enum DogArt {
     /// sliding dog's head drops, and pinning his collar to the running collar
     /// would cancel exactly the crouch that makes ducking work.
     ///
-    /// 33pt tall against 55pt running, so a rail at `Layout.railClearance` is
+    /// 33pt tall against 55pt running, so a rail at `Layout.duckClearance` is
     /// hit standing and cleared sliding. Slightly narrower than the drawing, so
     /// a trailing paw brushing an obstacle doesn't end the run.
     static let slideWidthFraction: CGFloat = 0.80
@@ -167,41 +208,66 @@ private enum DogArt {
 
 // MARK: - The obstacle artwork
 
-/// The three things Benny jumps, painted and dropped into the catalogue: a
-/// fallen log, a bush and a tree stump. The rail he ducks under is drawn in
-/// code — see `makeRail`.
+/// Everything Benny meets on the path, painted and dropped into the catalogue:
+/// a fallen log, a bush and a tree stump to jump, and a park bench to duck.
 private enum ObstacleArt {
+
+    /// The shape a drawing's solid mass is modelled with.
+    ///
+    /// A box for anything square-shouldered, a disc for anything domed. The
+    /// distinction earns its keep: a rectangle laid over the bush is 81% empty
+    /// air at its top corners, and the top corner is precisely where a jump
+    /// coming down clips it.
+    enum Solid {
+        /// Width as a fraction of the sprite's width; height and base as
+        /// fractions of its height, the base measured up from the drawing's
+        /// bottom edge.
+        case box(width: CGFloat, height: CGFloat, base: CGFloat)
+
+        /// Radius and centre height, both as fractions of the sprite's height —
+        /// height rather than width, because height is what `heightRange` sets
+        /// and width merely follows the drawing's aspect.
+        case disc(radius: CGFloat, centre: CGFloat)
+    }
 
     /// One kind of obstacle: its drawing, how big it is allowed to be, and
     /// which part of the drawing is actually solid.
     struct Piece {
         let texture: SKTexture?
 
+        /// The three ranges differ because they were each solved for the same
+        /// timing window rather than set to the same number: at max height all
+        /// three give a 33pt launch window at the opening speed. They diverged
+        /// once the shapes were made honest — a disc round the bush and a box
+        /// that stops at the log's cylinder both shed lethal empty air, so
+        /// those two had to grow to stay as demanding as they read.
+        ///
         /// Height is what's tuned; width follows the drawing's own aspect, so
         /// re-cropped art can never come out stretched. Both ends of the range
         /// are held down by the jump arc — see `Layout.jumpHeight`, and note it
         /// is the width that binds, since width comes along for the ride.
         let heightRange: ClosedRange<CGFloat>
 
-        /// The solid mass within the drawing, as fractions of the sprite.
+        /// The solid mass within the drawing.
         ///
         /// Every one of these carries a fringe of loose grass along its base,
         /// and the stump has leaves sprouting either side. Nobody reads those as
         /// part of the obstacle, so brushing one shouldn't end a run — the same
         /// reasoning that keeps Benny's trailing paws out of his own body box.
         ///
-        /// Measured off the alpha channel: the span where a column or row of the
-        /// drawing is more than a third covered, then trimmed a little in
-        /// Benny's favour.
-        let widthFraction: CGFloat
-        let heightFraction: CGFloat
-
-        /// How much of the drawing, up from its base, is loose grass.
-        let bottomFraction: CGFloat
+        /// Measured off the alpha channel, then trimmed a little in Benny's
+        /// favour.
+        let solid: Solid
 
         /// The log's cylinder sits right of centre, because its grass tuft
         /// spills further out to the left than the wood does.
         let offsetXFraction: CGFloat
+
+        /// How far this drawing sinks below the turf line. Defaults to
+        /// `Layout.obstacleSink`; the bench takes less, because its cast-iron
+        /// feet are the bottom of the drawing rather than a skirt of grass, and
+        /// because its height is derived from this — see `benchHeight`.
+        var sink: CGFloat = Layout.obstacleSink
 
         /// The 2:1 fallback only matters if the art is missing, in which case
         /// the drawn block stands in for it.
@@ -214,13 +280,22 @@ private enum ObstacleArt {
     }
 
     static let log = Piece(
-        texture: load("obstacle_log"), heightRange: 44...56,
-        widthFraction: 0.75, heightFraction: 0.72, bottomFraction: 0.22, offsetXFraction: 0.06
+        texture: load("obstacle_log"), heightRange: 59...76,
+        // Stops at the top of the cylinder, measured at 0.754 of the drawing.
+        // It used to run to 0.94 because the sprig of leaves dragged the
+        // measurement up with it, leaving a full-width slab of nothing above
+        // the wood — 88% empty at the top-left corner, which is the corner a
+        // descending jump meets first.
+        solid: .box(width: 0.75, height: 0.534, base: 0.22), offsetXFraction: 0.06
     )
 
     static let bush = Piece(
-        texture: load("obstacle_bush"), heightRange: 44...58,
-        widthFraction: 0.78, heightFraction: 0.82, bottomFraction: 0.15, offsetXFraction: 0
+        texture: load("obstacle_bush"), heightRange: 70...92,
+        // The one genuinely round obstacle. Least-squares fit over the
+        // silhouette's upper edge gives radius 0.830 / centre 0.120; the radius
+        // is pulled in to 0.80 so the disc sits inside the foliage rather than
+        // on its best-fit average.
+        solid: .disc(radius: 0.80, centre: 0.12), offsetXFraction: 0
     )
 
     /// Sized to the bush, so the three read as one family rather than the
@@ -231,11 +306,45 @@ private enum ObstacleArt {
     /// the stump has already tapered in. Taking the flare instead costs a good
     /// 15pt of the clearance a jump has to spare at the opening scroll speed.
     static let stump = Piece(
-        texture: load("obstacle_stump"), heightRange: 44...58,
-        widthFraction: 0.64, heightFraction: 0.94, bottomFraction: 0.02, offsetXFraction: 0
+        texture: load("obstacle_stump"), heightRange: 66...87,
+        solid: .box(width: 0.64, height: 0.94, base: 0.02), offsetXFraction: 0
     )
 
-    static let all = [log, bush, stump]
+    /// The jump rotation. The bench is deliberately not in here — it's the
+    /// obstacle you duck, and `spawnObstacle` reaches for it by name.
+    static let jumps = [log, bush, stump]
+
+    /// Fraction of the bench drawing that is open air under the seat. High,
+    /// because the seat was thinned to a plank: at the drawing's native
+    /// chunkiness the slab came out as thick as the legs were tall, which left
+    /// the bench towering over Benny's back rather than reading as something he
+    /// could sit on.
+    private static let benchUnderseat: CGFloat = 0.701
+
+    /// Shallower than the rest. The bench's feet are cast iron, not grass, so
+    /// they only need to meet the turf rather than disappear into it — and
+    /// every point of sink here makes the whole bench taller and wider, because
+    /// the seat has to stay `duckClearance` above the turf regardless.
+    private static let benchSink: CGFloat = 6
+
+    /// Sized so the underside of the seat lands exactly on the clearance line,
+    /// the sink into the turf included. The bench scales off the one number
+    /// that says how much room a sliding dog needs, so resizing Benny again
+    /// can't quietly leave the seat too low to duck under.
+    /// `duckClearance` is measured from where Benny stands, so both depths go
+    /// in: the bench's own sink pushes the seat down, and Benny being planted
+    /// deeper than the bench pulls it back up relative to him.
+    private static let benchHeight =
+        (Layout.duckClearance + benchSink - Layout.dogPlantDepth) / benchUnderseat
+
+    /// The one you slide under. The legs fall below the seat's box and carry no
+    /// physics of their own — Benny passing between them is the same shorthand
+    /// the old drawn rail used for its posts.
+    static let bench = Piece(
+        texture: load("obstacle_bench"), heightRange: benchHeight...benchHeight,
+        solid: .box(width: 0.95, height: 1 - benchUnderseat, base: benchUnderseat),
+        offsetXFraction: 0, sink: benchSink
+    )
 
     /// Optional, and probed with `UIImage(named:)` for the same reason `DogArt`
     /// does it: `SKTexture(imageNamed:)` hands back a placeholder for a name
@@ -289,8 +398,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     /// Reported so the SwiftUI layer can show the "swipe down" hint the first
     /// time a rail actually appears, rather than up front where it means little.
-    var onFirstRail: (() -> Void)?
-    private var hasSpawnedRail = false
+    var onFirstLowObstacle: (() -> Void)?
+
+    /// Fires when a fresh run begins after a crash. The counterpart to
+    /// `onGameOver`, so anything that reacted to the run ending can undo it.
+    var onRetry: (() -> Void)?
+    private var hasSpawnedLowObstacle = false
 
     /// Driven by ground contacts rather than inferred from velocity. Velocity
     /// passes through zero at the apex of every jump, so testing `vy ≈ 0` would
@@ -301,7 +414,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var obstacleTimer: TimeInterval = 0
     private var obstacleInterval: TimeInterval = 1.8
     private var lastUpdateTime: TimeInterval = 0
-    private var gameSpeed: CGFloat = 220
+    private var gameSpeed: CGFloat = Layout.openingSpeed
 
     /// Reported so SwiftUI can draw the score and persist a best.
     var onScoreChange: ((Int) -> Void)?
@@ -474,8 +587,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         ground.addChild(edge)
 
         let body = SKPhysicsBody(
-            edgeFrom: CGPoint(x: left, y: Layout.groundTop),
-            to: CGPoint(x: left + span, y: Layout.groundTop)
+            edgeFrom: CGPoint(x: left, y: Layout.dogGroundLine),
+            to: CGPoint(x: left + span, y: Layout.dogGroundLine)
         )
         body.isDynamic = false
         body.categoryBitMask = PhysicsCategory.ground
@@ -492,7 +605,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func makeDog() -> SKNode {
         let size = Layout.dogSize
         let node = SKNode()
-        node.position = CGPoint(x: Layout.dogX, y: Layout.groundTop + size.height / 2)
+        node.position = CGPoint(x: Layout.dogX, y: Layout.dogGroundLine + size.height / 2)
         node.zPosition = 10
 
         let body = makeDogBody(size: size)
@@ -770,7 +883,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         puff.alpha = 0.9
         puff.position = CGPoint(
             x: Layout.dogX - behind + CGFloat.random(in: -4...4),
-            y: Layout.groundTop + 5
+            y: Layout.dogGroundLine + 5
         )
         puff.zPosition = 9
         addChild(puff)
@@ -787,19 +900,19 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Obstacles
 
     private func spawnObstacle() {
-        // Rails stay the minority — they're the newer verb, and a run that's
-        // mostly ducking loses the rhythm of jumping. They also hold off until
-        // a few obstacles in, so the first thing anyone meets is a jump.
-        let wantsRail = score >= 2 && DogArt.slideFrames.count > 1 && Int.random(in: 0..<10) < 3
+        // Benches stay the minority — ducking is the newer verb, and a run
+        // that's mostly ducking loses the rhythm of jumping. They also hold off
+        // until a few obstacles in, so the first thing anyone meets is a jump.
+        let wantsBench = score >= 2 && DogArt.slideFrames.count > 1 && Int.random(in: 0..<10) < 3
         let obstacle: SKNode
-        if wantsRail {
-            obstacle = makeRail()
-            if !hasSpawnedRail {
-                hasSpawnedRail = true
-                onFirstRail?()
+        if wantsBench {
+            obstacle = makeObstacle(ObstacleArt.bench)
+            if !hasSpawnedLowObstacle {
+                hasSpawnedLowObstacle = true
+                onFirstLowObstacle?()
             }
         } else {
-            obstacle = makeObstacle(ObstacleArt.all.randomElement() ?? ObstacleArt.log)
+            obstacle = makeObstacle(ObstacleArt.jumps.randomElement() ?? ObstacleArt.log)
         }
         obstacle.position = CGPoint(x: Layout.sceneSize.width + 60, y: Layout.groundTop)
         obstacle.zPosition = 8
@@ -824,24 +937,27 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let node = SKNode()
         let size = piece.size(height: .random(in: piece.heightRange))
 
-        let solidSize: CGSize
-        let solidCentre: CGPoint
+        let body: SKPhysicsBody
 
         if let texture = piece.texture {
             let sprite = SKSpriteNode(texture: texture, size: size)
             sprite.anchorPoint = CGPoint(x: 0.5, y: 0)
-            sprite.position = CGPoint(x: 0, y: -Layout.obstacleSink)
+            sprite.position = CGPoint(x: 0, y: -piece.sink)
             node.addChild(sprite)
 
-            solidSize = CGSize(
-                width: size.width * piece.widthFraction,
-                height: size.height * piece.heightFraction
-            )
-            solidCentre = CGPoint(
-                x: size.width * piece.offsetXFraction,
-                y: size.height * (piece.bottomFraction + piece.heightFraction / 2)
-                    - Layout.obstacleSink
-            )
+            let x = size.width * piece.offsetXFraction
+            switch piece.solid {
+            case let .box(width, height, base):
+                body = SKPhysicsBody(
+                    rectangleOf: CGSize(width: size.width * width, height: size.height * height),
+                    center: CGPoint(x: x, y: size.height * (base + height / 2) - piece.sink)
+                )
+            case let .disc(radius, centre):
+                body = SKPhysicsBody(
+                    circleOfRadius: size.height * radius,
+                    center: CGPoint(x: x, y: size.height * centre - piece.sink)
+                )
+            }
         } else {
             // Missing art. A plain block keeps the game playable and obvious
             // rather than putting an invisible obstacle in Benny's way.
@@ -854,65 +970,17 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             block.lineWidth = Layout.outline
             node.addChild(block)
 
-            // The block is solid all the way through — the fractions describe a
+            // The block is solid all the way through — `solid` describes a
             // drawing that isn't here.
-            solidSize = size
-            solidCentre = CGPoint(x: 0, y: size.height / 2)
+            body = SKPhysicsBody(rectangleOf: size, center: CGPoint(x: 0, y: size.height / 2))
         }
 
-        node.physicsBody = Self.obstacleBody(size: solidSize, center: solidCentre)
+        node.physicsBody = Self.obstacleBody(body)
         return node
     }
 
-    /// A low rail on two posts — the obstacle you duck rather than jump.
-    ///
-    /// The last obstacle still drawn in code, now that the log, bush and stump
-    /// are painted. Placeholder until the fence art lands; swapping it for a
-    /// sprite is a change to this function alone.
-    private func makeRail() -> SKNode {
-        let node = SKNode()
-        let span: CGFloat = 96
-        let railHeight: CGFloat = 20
-        let postWidth: CGFloat = 16
-        let postTop = Layout.railClearance + railHeight
-
-        // Posts are decoration only. They stand on the turf either side, so
-        // giving them bodies would make the rail impossible to get past —
-        // letting Benny slide between them is the usual 2D shorthand.
-        for dx in [-span / 2, span / 2] {
-            let post = SKShapeNode(
-                rect: CGRect(x: dx - postWidth / 2, y: 0, width: postWidth, height: postTop),
-                cornerRadius: 5
-            )
-            post.fillColor = Palette.log
-            post.strokeColor = Palette.ink
-            post.lineWidth = Layout.outline
-            node.addChild(post)
-        }
-
-        let rail = SKShapeNode(
-            rect: CGRect(x: -span / 2 - 4, y: Layout.railClearance, width: span + 8, height: railHeight),
-            cornerRadius: 6
-        )
-        rail.fillColor = Palette.log
-        rail.strokeColor = Palette.ink
-        rail.lineWidth = Layout.outline
-        node.addChild(rail)
-
-        let body = SKPhysicsBody(
-            rectangleOf: CGSize(width: span + 8, height: railHeight),
-            center: CGPoint(x: 0, y: Layout.railClearance + railHeight / 2)
-        )
-        body.isDynamic = false
-        body.categoryBitMask = PhysicsCategory.obstacle
-        body.contactTestBitMask = PhysicsCategory.dog
-        node.physicsBody = body
-
-        return node
-    }
-
-    private static func obstacleBody(size: CGSize, center: CGPoint) -> SKPhysicsBody {
-        let body = SKPhysicsBody(rectangleOf: size, center: center)
+    /// The masks every obstacle shares, whatever shape it came out as.
+    private static func obstacleBody(_ body: SKPhysicsBody) -> SKPhysicsBody {
         body.isDynamic = false
         body.categoryBitMask = PhysicsCategory.obstacle
         body.contactTestBitMask = PhysicsCategory.dog
@@ -942,7 +1010,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // Grounded and running only. The jump arc is timed to the airtime and
         // the slide to a distance, so both already account for `gameSpeed` —
         // scaling them again here would cut them short at the top speed.
-        dog.childNode(withName: "body")?.speed = (isOnGround && !isSliding) ? gameSpeed / 220 : 1
+        dog.childNode(withName: "body")?.speed =
+            (isOnGround && !isSliding) ? gameSpeed / Layout.openingSpeed : 1
 
         // Everything above keeps the title screen alive; everything below is the
         // game proper and waits for the first tap.
@@ -952,12 +1021,13 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         if obstacleTimer >= obstacleInterval {
             obstacleTimer -= obstacleInterval
             spawnObstacle()
-            // The floor is held above the airtime, not chosen for pacing: a
-            // jump covers 364pt at the top scroll speed, so a tighter gap than
-            // this would leave Benny airborne from one obstacle to the next,
-            // never on the ground long enough to drop into a slide for a rail.
-            obstacleInterval = max(1.05, obstacleInterval - 0.02)
-            gameSpeed = min(380, gameSpeed + 4)
+            // The floor is held above both the airtime and the slide, not
+            // chosen for pacing: at the top scroll speed a jump covers 454pt
+            // and a slide 400pt, so a tighter gap than this would run one
+            // obstacle into the next with no ground time to react in between.
+            // It has had to climb every time Benny has grown.
+            obstacleInterval = max(1.30, obstacleInterval - 0.02)
+            gameSpeed = min(Layout.topSpeed, gameSpeed + 4)
         }
 
         scoreClearedObstacles()
@@ -1071,11 +1141,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         groundContacts = 0
         obstacleTimer = 0
         obstacleInterval = 1.8
-        gameSpeed = 220
+        gameSpeed = Layout.openingSpeed
         lastUpdateTime = 0
         physicsWorld.speed = 1
 
         onScoreChange?(0)
+        onRetry?()
         build()
     }
 

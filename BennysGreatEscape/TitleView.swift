@@ -7,6 +7,10 @@
 //  targets are laid over the painted ones, positioned as fractions of the
 //  artwork so they stay put whatever the screen's aspect.
 //
+//  A painted button can't light up on its own, so a press is answered by
+//  darkening it: the target's own label is a shadow shaped like the button,
+//  invisible until a finger is down.
+//
 
 import SwiftUI
 
@@ -15,6 +19,7 @@ struct TitleView: View {
     let onStart: () -> Void
 
     @State private var showingAbout = false
+    @State private var showingSettings = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -29,6 +34,9 @@ struct TitleView: View {
 
                 target(Art.play, in: size, action: onStart)
                     .accessibilityLabel("Play")
+
+                target(Art.settings, in: size) { showingSettings = true }
+                    .accessibilityLabel("Settings")
 
                 target(Art.about, in: size) { showingAbout = true }
                     .accessibilityLabel("About")
@@ -46,18 +54,26 @@ struct TitleView: View {
         .fullScreenCover(isPresented: $showingAbout) {
             AboutView(bestScore: bestScore)
         }
+        .fullScreenCover(isPresented: $showingSettings) {
+            SettingsView()
+        }
     }
 
-    /// The painted button does the work visually; this just makes it tappable,
-    /// with a press state so it doesn't feel dead under the thumb.
-    private func target(_ rect: Art.Rect, in size: CGSize, action: @escaping () -> Void) -> some View {
-        let frame = rect.frame(in: size)
+    /// The painted button does the work visually; this makes it tappable and
+    /// darkens it while a finger is down.
+    ///
+    /// Two rectangles, deliberately: the tap area is the generous one, so the
+    /// button stays easy to hit, while the shadow is drawn to the painted
+    /// button's measured edge so it can't spill onto the foliage around it.
+    private func target(_ rect: Art.Button, in size: CGSize, action: @escaping () -> Void) -> some View {
+        let tap = rect.tap.frame(in: size)
+        let paint = rect.paint.frame(in: size)
         return Button(action: action) {
             Color.clear.contentShape(Rectangle())
         }
-        .buttonStyle(PressableTarget())
-        .frame(width: frame.width, height: frame.height)
-        .position(x: frame.midX, y: frame.midY)
+        .buttonStyle(PressTint(shadow: paint.size, cornerRadius: paint.height * rect.cornerRadius))
+        .frame(width: tap.width, height: tap.height)
+        .position(x: tap.midX, y: tap.midY)
     }
 
     /// Tucked into the clear sky to the left of Benny's head — directly under
@@ -99,17 +115,65 @@ private enum Art {
         }
     }
 
-    static let play  = Rect(x0: 0.207, y0: 0.678, x1: 0.771, y1: 0.772)
-    static let about = Rect(x0: 0.314, y0: 0.874, x1: 0.691, y1: 0.930)
-    static let best  = Rect(x0: 0.075, y0: 0.300, x1: 0.470, y1: 0.345)
+    /// A painted button: where it can be tapped, where it actually is, and how
+    /// round its corners are as a fraction of its height.
+    ///
+    /// `paint` is the button's *outer* edge — the dark outline and the shaded
+    /// rim inside it, not just the bright fill. Measuring the fill alone leaves
+    /// the tint short of the edge and the button keeps a bright ring while it's
+    /// held down, which is the tell that gave the first attempt away.
+    /// `tap` is looser than either, on purpose.
+    struct Button {
+        let tap: Rect
+        let paint: Rect
+        let cornerRadius: CGFloat
+    }
+
+    static let play = Button(
+        tap: Rect(x0: 0.207, y0: 0.678, x1: 0.771, y1: 0.772),
+        paint: Rect(x0: 0.221, y0: 0.668, x1: 0.781, y1: 0.777),
+        cornerRadius: 0.22
+    )
+
+    static let settings = Button(
+        tap: Rect(x0: 0.294, y0: 0.788, x1: 0.706, y1: 0.864),
+        paint: Rect(x0: 0.301, y0: 0.793, x1: 0.699, y1: 0.860),
+        cornerRadius: 0.48
+    )
+
+    static let about = Button(
+        tap: Rect(x0: 0.294, y0: 0.868, x1: 0.706, y1: 0.937),
+        paint: Rect(x0: 0.301, y0: 0.872, x1: 0.699, y1: 0.933),
+        cornerRadius: 0.48
+    )
+
+    static let best = Rect(x0: 0.075, y0: 0.300, x1: 0.470, y1: 0.345)
 }
 
-/// Painted buttons can't highlight themselves, so the target dips them slightly.
-private struct PressableTarget: ButtonStyle {
+/// Lays a button-shaped shadow over the painted button while a finger is down.
+///
+/// The shadow is an *overlay* rather than the button's label, and the label
+/// stays a plain `Color.clear`. That keeps the hit-testing path identical to a
+/// button with no press state at all — a label held at zero opacity is the kind
+/// of thing that can quietly stop taking taps.
+private struct PressTint: ButtonStyle {
+    let shadow: CGSize
+    let cornerRadius: CGFloat
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(GameStyle.pressShadow)
+                    .frame(width: shadow.width, height: shadow.height)
+                    .opacity(configuration.isPressed ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
+            // Instant down, gentle up. A press has to register the moment the
+            // finger lands; fading *in* would make the button feel slow, while
+            // snapping back out looks like a glitch rather than a release.
+            .animation(configuration.isPressed ? nil : .easeOut(duration: 0.22),
+                       value: configuration.isPressed)
     }
 }
 

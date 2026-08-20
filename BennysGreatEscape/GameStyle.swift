@@ -15,6 +15,14 @@ enum GameStyle {
     /// The deep navy the headings are set in.
     static let ink = Color(red: 0.10, green: 0.20, blue: 0.35)
 
+    /// Laid over a painted button while a finger is down. The title screen's
+    /// buttons live inside the illustration, so they can't light up on their
+    /// own — this is the only way they can answer a press.
+    ///
+    /// Slightly blue rather than pure black, because a flat black wash reads as
+    /// a dimmed screenshot; a cool shadow reads as a shadow.
+    static let pressShadow = Color(red: 0.06, green: 0.07, blue: 0.12).opacity(0.16)
+
     /// The amber of the painted buttons.
     static let amber = Color(red: 0.98, green: 0.76, blue: 0.24)
     static let amberDeep = Color(red: 0.85, green: 0.58, blue: 0.10)
@@ -26,6 +34,7 @@ enum GameStyle {
 struct CircleBackButton: View {
     let action: () -> Void
     var symbol = "arrow.left"
+    var label = "Back"
 
     var body: some View {
         Button(action: action) {
@@ -47,7 +56,7 @@ struct CircleBackButton: View {
                 }
         }
         .buttonStyle(SpringyButton())
-        .accessibilityLabel("Back")
+        .accessibilityLabel(label)
     }
 }
 
