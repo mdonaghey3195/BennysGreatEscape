@@ -130,20 +130,20 @@ private enum Art {
     }
 
     static let play = Button(
-        tap: Rect(x0: 0.207, y0: 0.678, x1: 0.771, y1: 0.772),
-        paint: Rect(x0: 0.221, y0: 0.668, x1: 0.781, y1: 0.777),
+        tap: Rect(x0: 0.222, y0: 0.681, x1: 0.774, y1: 0.792),
+        paint: Rect(x0: 0.232, y0: 0.687, x1: 0.764, y1: 0.786),
         cornerRadius: 0.22
     )
 
     static let settings = Button(
-        tap: Rect(x0: 0.294, y0: 0.788, x1: 0.706, y1: 0.864),
-        paint: Rect(x0: 0.301, y0: 0.793, x1: 0.699, y1: 0.860),
+        tap: Rect(x0: 0.301, y0: 0.793, x1: 0.697, y1: 0.867),
+        paint: Rect(x0: 0.311, y0: 0.798, x1: 0.687, y1: 0.861),
         cornerRadius: 0.48
     )
 
     static let about = Button(
-        tap: Rect(x0: 0.294, y0: 0.868, x1: 0.706, y1: 0.937),
-        paint: Rect(x0: 0.301, y0: 0.872, x1: 0.699, y1: 0.933),
+        tap: Rect(x0: 0.299, y0: 0.872, x1: 0.698, y1: 0.936),
+        paint: Rect(x0: 0.309, y0: 0.877, x1: 0.688, y1: 0.930),
         cornerRadius: 0.48
     )
 

@@ -185,18 +185,20 @@ private enum Art {
 
     /// The painted switch. The live one is drawn a touch larger so no painted
     /// edge shows around it.
-    static let toggle = Rect(x0: 0.672, y0: 0.453, x1: 0.892, y1: 0.510)
+    static let toggle = Rect(x0: 0.672, y0: 0.482, x1: 0.892, y1: 0.539)
 
     /// The whole painted row — icon, title, detail and switch.
-    static let soundRow = Rect(x0: 0.110, y0: 0.430, x1: 0.900, y1: 0.535)
+    static let soundRow = Rect(x0: 0.110, y0: 0.459, x1: 0.900, y1: 0.564)
 
     /// The painted BACK plate. Only a target; the drawing is in the artwork.
     ///
-    /// The shipped PNG is not quite the supplied original — the plate sat
-    /// tight under the divider with a wide empty gap beneath it, so it was
-    /// lifted and moved 120px down the card, and the space it left cloned over
-    /// with parchment. Re-measure this if the illustration is ever replaced.
-    static let back = Rect(x0: 0.300, y0: 0.652, x1: 0.700, y1: 0.731)
+    /// The shipped PNG is not the supplied original. Two edits: the BACK plate
+    /// was lifted and moved 120px down the card (it sat tight under the divider
+    /// with a wide gap beneath it), and the whole illustration was then pushed
+    /// 48px down so the paw and title clear the Dynamic Island — done by
+    /// stretching the 76px of sky above the logo rather than scaling the logo.
+    /// Re-measure everything here if the illustration is ever replaced.
+    static let back = Rect(x0: 0.300, y0: 0.681, x1: 0.700, y1: 0.760)
 }
 
 #Preview {
