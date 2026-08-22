@@ -1,7 +1,9 @@
 # Benny's Great Escape
 
-A one-thumb endless runner for iPhone. Benny gallops, you tap to jump, the logs
-and bushes keep coming and the world speeds up until you clip one.
+A one-thumb endless runner for iPhone. A man walks his beagle across the park, a
+rabbit breaks cover, and the leash doesn't hold — after which Benny gallops, you
+swipe to jump and duck, the logs and bushes keep coming and the world speeds up
+until you clip one.
 
 Started life as a hidden easter egg inside PawTrack — triple-tapping the dog on
 the welcome screen — and outgrew it.
@@ -22,19 +24,41 @@ iOS 17+, iPhone, portrait. No dependencies — SwiftUI and SpriteKit only.
 | `BennysGreatEscapeApp.swift` | `@main`, hands off to `GameView` |
 | `GameView.swift` | Hosts the scene, the score, and the title overlay |
 | `TitleView.swift` | Title card; the live scene runs behind it |
-| `GameScene.swift` | The game — world, physics, obstacles, scoring |
+| `GameScene.swift` | The game — the opening clip, world, physics, obstacles, scoring |
+| `Art/SliceIntroSheets.swift` | Cuts the opening clip's two sheets into frames |
 
-Everything except Benny is drawn in code: the gradient sky, the parallax clouds
-and hills, the scrolling turf, the logs and bushes. The only artwork in the
-asset catalogue is Benny himself.
+The world is drawn in code: the gradient sky, the parallax clouds and hills, the
+scrolling turf. Everything you actually play against is painted and lives in the
+asset catalogue — Benny, the things he jumps, and the opening clip.
+
+### The opening
+
+Play doesn't drop straight into a run. A ~4 second clip says why Benny is
+running, and it plays *inside* the scene — same sky, same hills, same turf — so
+there is nothing to cut to when it ends. What ends it is the artwork handing
+over: the sheet stops drawing the dog, Benny fades in where the drawing left him
+at the drawing's size, and the world starts moving under him as he grows into
+his own. A tap skips it. It plays on every Play and never on a retry, which
+falls out of `hasStarted` surviving `restart` and not `returnToTitle`.
+
+The two source sheets live in `Art/`, and `swift Art/SliceIntroSheets.swift`
+cuts them. Neither arrived usable: both are flat RGB with the background
+*painted* rather than an alpha channel, and the man-and-dog sheet only looks like
+a grid — the pairs are drawn at their own spacing, and on the middle row one
+dog's nose overlaps the next man's hand, so no set of straight cuts separates
+all fifteen frames. The script finds them by what is joined to what instead, and
+keys the background by flooding inward from the border so that white *enclosed*
+by a drawing — Benny's chest, the man's shirt — survives. It prints the handful
+of fractions `IntroArt` is built from, so re-cutting a redrawn sheet reprints
+the numbers to paste back.
 
 ### Animation
 
-Two sets of frames, both loaded by probing `benny_run_0…`, `benny_jump_0…`
-until a name is missing — so adding frames is a pure asset drop with no code
-change.
+Three sets of frames — run, jump and slide — plus the clip's two, all loaded by
+probing `benny_run_0…`, `intro_walk_0…` until a name is missing, so adding
+frames is a pure asset drop with no code change.
 
-Both sets share **one canvas**, which matters more than it sounds:
+Each set shares **one canvas**, which matters more than it sounds:
 
 - The sprite renders every texture at one fixed size, so frames drawn at
   different scales would make Benny visibly change size mid-jump. Each source

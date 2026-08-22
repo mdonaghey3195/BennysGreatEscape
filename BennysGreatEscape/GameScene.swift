@@ -130,35 +130,35 @@ private enum Layout {
     static let outline: CGFloat = 4
 }
 
-// MARK: - The dog's artwork
+// MARK: - Artwork
+
+/// Every animation in the game is a numbered run of images in the catalogue,
+/// collected until one is missing — so adding a frame is a pure asset drop with
+/// nothing here to change.
+///
+/// Probed with `UIImage(named:)` rather than `SKTexture(imageNamed:)` because
+/// the latter hands back a placeholder for a missing name instead of nil, so it
+/// can't tell you where the frames stop.
+private func numberedTextures(_ prefix: String) -> [SKTexture] {
+    var textures: [SKTexture] = []
+    var index = 0
+    while let image = UIImage(named: "\(prefix)_\(index)") {
+        textures.append(SKTexture(image: image))
+        index += 1
+    }
+    return textures
+}
 
 /// Benny, drawn side-on and facing right — the way he runs.
 private enum DogArt {
-    /// Frames are collected until one is missing, so a real run cycle is a pure
-    /// asset drop: add `benny_run_1`, `benny_run_2`, … to the catalogue and the
-    /// animation starts on its own, with nothing here to change.
-    ///
-    /// Probed with `UIImage(named:)` rather than `SKTexture(imageNamed:)`
-    /// because the latter hands back a placeholder for a missing name instead
-    /// of nil, so it can't tell you where the frames stop.
-    static let frames: [SKTexture] = load("benny_run")
+    /// The run cycle: add `benny_run_6` and it joins the gallop on its own.
+    static let frames: [SKTexture] = numberedTextures("benny_run")
 
     /// The jump arc — bound, rear up, two airborne poses, reach down, land.
-    /// Loaded the same way, so extra frames are a pure asset drop here too.
-    static let jumpFrames: [SKTexture] = load("benny_jump")
+    static let jumpFrames: [SKTexture] = numberedTextures("benny_jump")
 
     /// The slide — drop, slide, deep slide, recover.
-    static let slideFrames: [SKTexture] = load("benny_slide")
-
-    private static func load(_ prefix: String) -> [SKTexture] {
-        var textures: [SKTexture] = []
-        var index = 0
-        while let image = UIImage(named: "\(prefix)_\(index)") {
-            textures.append(SKTexture(image: image))
-            index += 1
-        }
-        return textures
-    }
+    static let slideFrames: [SKTexture] = numberedTextures("benny_slide")
 
     /// Width / height of the drawing. The fallback only matters if the asset is
     /// missing entirely, in which case the placeholder block is drawn instead.
@@ -204,6 +204,108 @@ private enum DogArt {
     static let slideWidthFraction: CGFloat = 0.80
     static let slideHeightFraction: CGFloat = 0.362
     static let slideOffsetXFraction: CGFloat = 0.030
+}
+
+// MARK: - The opening clip's artwork
+
+/// The frames of the clip that plays before a run: a man out walking Benny, and
+/// the rabbit that ends it.
+///
+/// The fractions are measured off the sheets rather than typed in — they are
+/// what `Art/SliceIntroSheets.swift` prints when it cuts them, so re-cutting a
+/// redrawn sheet reprints the numbers to paste back here.
+private enum IntroArt {
+    /// Man, leash and dog together in one drawing, all fifteen aligned on the
+    /// man's head so he holds his ground while the dog pulls away from him.
+    /// From frame ten on the dog isn't drawn at all — that is where the game's
+    /// own Benny takes over.
+    static let walkFrames: [SKTexture] = numberedTextures("intro_walk")
+
+    /// A hop cycle, facing right, the way he runs off.
+    static let rabbitFrames: [SKTexture] = numberedTextures("intro_rabbit")
+
+    static let walkAspect: CGFloat = 1.176
+    static let rabbitAspect: CGFloat = 1.464
+
+    /// Where the man's head sits across the drawing — the sprite's anchor, and
+    /// so the point that stays put as the frames change under it.
+    static let manCentreXFraction: CGFloat = 0.354
+
+    /// Where his feet are, as a fraction up from the bottom of the canvas. Not
+    /// zero, because the canvas is sized to the running poses, whose trailing
+    /// leg reaches below where he stands.
+    static let groundLineFraction: CGFloat = 0.013
+
+    /// The drawn dog, measured on the handoff frame: how wide he is, and where
+    /// he stands. The first sets the whole clip's scale, the second is where
+    /// Benny is put when he takes the drawing's place.
+    static let dogWidthFraction: CGFloat = 0.490
+    static let dogCentreXFraction: CGFloat = 0.755
+}
+
+/// How the clip is staged and paced.
+private enum Intro {
+    /// How big the clip plays, against the size the game plays at.
+    ///
+    /// Under life size, because three of them have to stand in one shot — the
+    /// man, the dog, and a rabbit far enough ahead of the dog to be something he
+    /// sees rather than something he is already standing on. At the size Benny
+    /// actually runs at, 400pt of scene doesn't hold them.
+    ///
+    /// It reads as the camera being further back, which is what an establishing
+    /// shot is. Benny then grows into his own size over the takeoff, coming at
+    /// the camera as the camera falls in behind him.
+    static let scale: CGFloat = 0.66
+
+    /// Sized so the drawn dog is `scale` of the dog you then play as. That one
+    /// measurement is what lets the handoff be a cut rather than a trick: Benny
+    /// fades in over a drawing of himself, at the drawing's size.
+    static var walkerSize: CGSize {
+        let width = Layout.dogWidth * scale / IntroArt.dogWidthFraction
+        return CGSize(width: width, height: width / IntroArt.walkAspect)
+    }
+
+    /// A rabbit against a beagle. Roughly half his length, which is about right
+    /// and, more to the point, small enough to read as prey.
+    static var rabbitSize: CGSize {
+        let width = Layout.dogWidth * scale * 0.55
+        return CGSize(width: width, height: width / IntroArt.rabbitAspect)
+    }
+
+    /// The man's head, and so the man. Far enough right that his trailing leg
+    /// at full stride still clears the left edge once `.aspectFill` has cropped
+    /// it — which on a tall phone takes 16pt off each side — and far enough left
+    /// to leave the dog and the rabbit room ahead of him.
+    static let manX: CGFloat = 80
+
+    /// The rabbit waits here: mid-screen, and a clear nose ahead of the dog,
+    /// which is where he has to be for the moment to read as Benny spotting him
+    /// rather than tripping over him.
+    static let rabbitX: CGFloat = 215
+
+    /// The three beats: out for a walk, the lunge and the leash going, and the
+    /// man left standing. Five frames each.
+    static let walkFrame: TimeInterval = 0.17
+    static let lungeFrame: TimeInterval = 0.16
+    static let aloneFrame: TimeInterval = 0.17
+
+    /// The rabbit's cue, measured from the tap, and how long he takes to clear
+    /// the screen. The cue lands inside the walk, so he is up and crossing
+    /// before Benny goes rather than after.
+    static let rabbitCue: TimeInterval = 1.15
+    static let rabbitBolt: TimeInterval = 1.05
+
+    /// Benny fading in over the drawing of himself, and then how long he takes
+    /// to settle into the place he runs from.
+    static let handoff: TimeInterval = 0.14
+    static let takeoff: TimeInterval = 0.9
+
+    /// How long the world takes to get up to speed once he goes.
+    static let pickUp: TimeInterval = 0.6
+
+    /// A beat on Benny running, the man already carried out of frame behind
+    /// him, before the score comes up over the top.
+    static let hold: TimeInterval = 0.45
 }
 
 // MARK: - The obstacle artwork
@@ -389,6 +491,29 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// than a still, and it costs nothing since the scene is already built.
     private var hasStarted = false
 
+    /// The opening clip, between the title screen and the first obstacle. It
+    /// runs inside the scene rather than over it, so the park it is played in is
+    /// the same park the game is played in and the handoff at the end is a cut
+    /// between two things standing in one place.
+    private var isIntro = false
+    private var intro: SKNode?
+
+    /// Whether the clip is being carried along by the turf yet.
+    ///
+    /// It isn't while the man is walking: the world is standing still under him,
+    /// and letting him ride it would drag him off the left edge before he had
+    /// said anything. From the handoff on it is exactly what leaves him behind.
+    private var introRidesAlong = false
+
+    /// How much of `gameSpeed` the turf is actually moving at. One, except
+    /// during the clip, which holds the world still while the man walks his dog
+    /// across it and then lets it go as Benny does.
+    ///
+    /// Kept apart from `gameSpeed` itself, which also sets how fast Benny's legs
+    /// turn over — winding *that* down to nothing would freeze his gallop at
+    /// exactly the moment he is supposed to bolt.
+    private var worldScroll: CGFloat = 1
+
     // Swipe tracking
     private var touchOrigin: CGPoint?
     private var gestureResolved = false
@@ -403,6 +528,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// Fires when a fresh run begins after a crash. The counterpart to
     /// `onGameOver`, so anything that reacted to the run ending can undo it.
     var onRetry: (() -> Void)?
+
+    /// Fires when the opening clip is over — however it ended — and play is
+    /// actually beginning. What used to happen the instant Play was tapped
+    /// hangs off this instead, so the music and the score arrive with Benny
+    /// rather than four seconds ahead of him.
+    var onIntroFinished: (() -> Void)?
     private var hasSpawnedLowObstacle = false
 
     /// Driven by ground contacts rather than inferred from velocity. Velocity
@@ -451,6 +582,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         addGroundDetail()
         dog = makeDog()
         addChild(dog)
+
+        // The clip is what stands behind the title card, so it is built with the
+        // rest of the world rather than swapped in when Play is tapped. Not on a
+        // retry, though — `hasStarted` survives `restart` precisely so that a
+        // crash drops straight back into the run.
+        if !hasStarted { stageIntro() }
     }
 
     /// Tufts scattered over the turf. Without them the ground is an unbroken
@@ -726,6 +863,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private static let swipeThreshold: CGFloat = 24
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // A tap during the clip skips it. It is the same four seconds every
+        // time Play is tapped, and there is no reason to sit through it twice.
+        guard !isIntro else {
+            finishIntro()
+            return
+        }
         guard !isGameOver else {
             restart()
             return
@@ -736,7 +879,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isGameOver, !gestureResolved,
+        guard !isIntro, !isGameOver, !gestureResolved,
               let touch = touches.first, let origin = touchOrigin else { return }
 
         let dy = touch.location(in: self).y - origin.y
@@ -987,6 +1130,196 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         return body
     }
 
+    // MARK: - The opening clip
+
+    /// Why Benny is running: a man walks him across the park, a rabbit breaks
+    /// cover in front of them, and the leash doesn't hold.
+    ///
+    /// It plays inside the scene rather than over it — same sky, same hills,
+    /// same turf — so there is nothing to cut to when it ends. What ends it is
+    /// the artwork handing over: the sheet stops drawing the dog, Benny fades in
+    /// where the drawing left him, and the world starts moving under him.
+    /// Sets the clip up, still and silent, as the thing standing behind the
+    /// title card.
+    ///
+    /// Which sounds like a detail and isn't. `SpriteView` draws on its own clock
+    /// and the SwiftUI card over it on another, and there is no turn in which
+    /// both change together — so a scene that swaps as the card lifts gets the
+    /// card taken off it over whatever it last drew, and what that is, on the
+    /// frame Play is tapped, is the galloping dog the clip exists to explain.
+    /// Fades and delays only move which frame it is.
+    ///
+    /// Staged up front there is nothing to swap. Play starts the beats, and the
+    /// card comes off a scene that has had the man standing in it all along.
+    private func stageIntro() {
+        guard IntroArt.walkFrames.count >= 15, !IntroArt.rabbitFrames.isEmpty else { return }
+
+        // The world stands still under him until he loses the dog.
+        worldScroll = 0
+        scenery.speed = 0
+
+        // Benny is in the artwork for now, drawn rather than simulated. Left
+        // dynamic, gravity would drag him off the ground line the moment an
+        // action took his position over.
+        dog.isHidden = true
+        dog.physicsBody?.isDynamic = false
+
+        let stage = SKNode()
+        stage.zPosition = 9  // over the turf, under Benny
+        addChild(stage)
+        intro = stage
+
+        let walker = SKSpriteNode(texture: IntroArt.walkFrames[0], size: Intro.walkerSize)
+        walker.name = "walker"
+        walker.anchorPoint = CGPoint(x: IntroArt.manCentreXFraction, y: IntroArt.groundLineFraction)
+        walker.position = CGPoint(x: Intro.manX, y: Layout.dogGroundLine)
+        stage.addChild(walker)
+
+        // Out in the grass, and not yet worth looking at.
+        let rabbit = SKSpriteNode(texture: IntroArt.rabbitFrames[0], size: Intro.rabbitSize)
+        rabbit.name = "rabbit"
+        // The sheet's lowest pose sits on the floor of its canvas, so the floor
+        // is the ground — and the airborne poses ride above it on their own,
+        // which is the hop.
+        rabbit.anchorPoint = CGPoint(x: 0.5, y: 0)
+        rabbit.position = CGPoint(x: Intro.rabbitX, y: Layout.dogGroundLine)
+        rabbit.alpha = 0
+        stage.addChild(rabbit)
+    }
+
+    /// Starts the clip running. Everything it moves is already on screen; this
+    /// is only the beats.
+    private func runIntro() {
+        isIntro = true
+
+        let frames = IntroArt.walkFrames
+        guard let stage = intro,
+              let walker = stage.childNode(withName: "walker") as? SKSpriteNode,
+              let rabbit = stage.childNode(withName: "rabbit")
+        else {
+            // No artwork, no clip — the same stance `makeDog` takes with its
+            // placeholder. The game still starts.
+            finishIntro()
+            return
+        }
+
+        // Two turns of the walk, with the man covering a little ground under it
+        // so he reads as walking rather than treading; then the lunge and the
+        // leash going; then the five frames with no dog drawn in them, over
+        // which he gives chase, gives up, and stops.
+        walker.run(.moveBy(x: 20, y: 0, duration: 10 * Intro.walkFrame))
+        walker.run(.sequence([
+            .repeat(.animate(with: Array(frames[0...4]), timePerFrame: Intro.walkFrame), count: 2),
+            .animate(with: Array(frames[5...9]), timePerFrame: Intro.lungeFrame),
+            .run { [weak self] in self?.handOff() },
+            .animate(with: Array(frames[10...]), timePerFrame: Intro.aloneFrame),
+            .wait(forDuration: Intro.hold),
+            .run { [weak self] in self?.finishIntro() },
+        ]))
+
+        // The rabbit sits tight until Benny is close, then breaks and is off the
+        // right of the screen inside a second.
+        let bolt = SKAction.moveBy(x: 240, y: 0, duration: Intro.rabbitBolt)
+        bolt.timingMode = .easeIn  // a standing start, not a passing car
+
+        rabbit.run(.sequence([
+            .wait(forDuration: Intro.rabbitCue),
+            .fadeIn(withDuration: 0.12),
+            .run { [weak rabbit] in
+                rabbit?.run(.repeatForever(.animate(with: IntroArt.rabbitFrames, timePerFrame: 0.07)))
+            },
+            .wait(forDuration: 0.28),  // seen, and not yet moving
+            bolt,
+            .removeFromParent(),
+        ]))
+    }
+
+    /// The drawing stops drawing the dog and the game starts simulating him — in
+    /// the same place, at the same size, under a fade just long enough to cover
+    /// the change of pose.
+    private func handOff() {
+        dog.removeAllActions()
+        dog.position = CGPoint(x: drawnDogX, y: Layout.dogGroundLine + Layout.dogSize.height / 2)
+        // He comes in at the size the drawing had him and grows into his own
+        // over the takeoff, which is the camera closing on him.
+        dog.setScale(Intro.scale)
+        dog.isHidden = false
+        dog.alpha = 0
+        dog.run(.fadeIn(withDuration: Intro.handoff))
+
+        // The camera goes with Benny: the turf starts moving, the hills pick up,
+        // and the man — pinned to the turf by `update` — is carried backwards
+        // out of frame.
+        ramp(worldScroll: 1, over: Intro.pickUp)
+        scenery.run(.speed(to: 1, duration: Intro.pickUp))
+        introRidesAlong = true
+
+        // He drifts left against the screen while the ground goes left faster,
+        // which nets out as him pulling away — and lands him on the mark he runs
+        // from for the rest of the game.
+        let settle = SKAction.group([
+            .moveTo(x: Layout.dogX, duration: Intro.takeoff),
+            .scale(to: 1, duration: Intro.takeoff),
+        ])
+        settle.timingMode = .easeOut
+        dog.run(settle)
+
+        // The man gets a step or two after him before the fight goes out of it.
+        intro?.childNode(withName: "walker")?
+            .run(.moveBy(x: 24, y: 0, duration: Intro.aloneFrame * 3))
+    }
+
+    /// Where the sheet last drew the dog, in scene coordinates.
+    private var drawnDogX: CGFloat {
+        guard let stage = intro,
+              let walker = stage.childNode(withName: "walker") as? SKSpriteNode
+        else { return Layout.dogX }
+        let left = walker.position.x - walker.size.width * walker.anchorPoint.x
+        return stage.position.x + left + walker.size.width * IntroArt.dogCentreXFraction
+    }
+
+    /// The one way out of the clip, taken whether it played through or was
+    /// tapped away, so the two can't drift apart.
+    private func finishIntro() {
+        guard isIntro else { return }
+        isIntro = false
+        introRidesAlong = false
+
+        intro?.removeFromParent()
+        intro = nil
+
+        removeAction(forKey: "worldScroll")
+        worldScroll = 1
+        scenery.removeAllActions()
+        scenery.speed = 1
+
+        dog.removeAllActions()
+        dog.isHidden = false
+        dog.alpha = 1
+        dog.setScale(1)
+        dog.position = CGPoint(x: Layout.dogX, y: Layout.dogGroundLine + Layout.dogSize.height / 2)
+        dog.physicsBody?.velocity = .zero
+        dog.physicsBody?.isDynamic = true
+        // Put back on the ground rather than dropped onto it, so the first jump
+        // doesn't have to wait for a landing contact to arrive.
+        groundContacts = 1
+
+        hasStarted = true
+        onIntroFinished?()
+    }
+
+    /// Eases `worldScroll` to a value. It isn't a node property, so it can't
+    /// simply be animated — but it is the thing the whole clip hands over with,
+    /// and handing it over in one step is a visible jolt.
+    private func ramp(worldScroll target: CGFloat, over duration: TimeInterval) {
+        let from = worldScroll
+        removeAction(forKey: "worldScroll")
+        run(.customAction(withDuration: duration) { [weak self] _, elapsed in
+            let progress = duration > 0 ? min(1, elapsed / CGFloat(duration)) : 1
+            self?.worldScroll = from + (target - from) * progress
+        }, withKey: "worldScroll")
+    }
+
     // MARK: - Update loop
 
     override func update(_ currentTime: TimeInterval) {
@@ -998,7 +1331,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let delta = min(currentTime - lastUpdateTime, 1.0 / 30)
         lastUpdateTime = currentTime
 
-        scrollGroundDetail(by: gameSpeed * CGFloat(delta))
+        // The man is pinned to the turf rather than given a slide of his own, so
+        // that when the world does start moving he can't moonwalk against it.
+        let step = gameSpeed * worldScroll * CGFloat(delta)
+        scrollGroundDetail(by: step)
+        if introRidesAlong { intro?.position.x -= step }
 
         // Benny's legs keep pace with the ground. Without this the gait stays
         // fixed while the world accelerates, and by the top speed he looks like
@@ -1116,23 +1453,33 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         onGameOver?(score)
     }
 
-    /// Begins play. `hasStarted` is deliberately not cleared by `restart`, so
-    /// retrying after a crash drops straight back into the run rather than
-    /// bouncing the player out to the title screen.
+    /// Rolls the opening clip, and then begins play.
+    ///
+    /// `hasStarted` is deliberately not cleared by `restart`, so retrying after
+    /// a crash drops straight back into the run rather than bouncing the player
+    /// out to the title screen — and, now, without sitting through the clip
+    /// again. Backing out to the title does clear it, so the next Play plays it.
     func start() {
-        hasStarted = true
+        runIntro()
     }
 
     /// Winds the world back to its opening state and stops play, so the title
     /// screen has a fresh run waiting behind it rather than a half-finished one.
     func returnToTitle() {
-        restart()
+        // Cleared first: `restart` rebuilds the world, and whether that world
+        // has the opening clip standing in it turns on this.
         hasStarted = false
+        restart()
     }
 
     private func restart() {
         removeAllChildren()
+        removeAllActions()
 
+        intro = nil
+        isIntro = false
+        introRidesAlong = false
+        worldScroll = 1
         score = 0
         isGameOver = false
         isSliding = false

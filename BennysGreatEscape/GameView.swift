@@ -23,7 +23,13 @@ struct GameView: View {
     /// edges don't match the screen's aspect.
     @State private var score = 0
 
-    @State private var hasStarted = false
+    /// Three states, not two: while the opening clip runs, neither the title
+    /// nor the score belongs over the top of it.
+    @State private var phase: Phase = .title
+
+    private enum Phase {
+        case title, intro, playing
+    }
 
     // Each control is taught once, ever.
     @AppStorage("seenJumpHint") private var seenJumpHint = false
@@ -44,12 +50,18 @@ struct GameView: View {
             SpriteView(scene: scene)
                 .ignoresSafeArea()
 
-            if hasStarted {
+            // Two conditions rather than one switch: the clip has neither over
+            // it — including nothing to tap, so the tap that skips it reaches
+            // the scene — and an `EmptyView` branch gives SwiftUI nothing to
+            // transition to, which costs the title its fade and pops it off.
+            if phase == .playing {
                 scoreboard
                     .transition(.opacity)
-            } else {
-                // Sits above the scene and takes the first tap itself, so the
-                // scene's own touch handling stays purely swipe-and-retry.
+            }
+
+            // Sits above the scene and takes the first tap itself, so the
+            // scene's own touch handling stays purely swipe-and-retry.
+            if phase == .title {
                 TitleView(bestScore: bestScore, onStart: start)
                     .transition(.opacity)
             }
@@ -70,6 +82,7 @@ struct GameView: View {
                 Music.shared.duck()
             }
             scene.onRetry = { Music.shared.unduck() }
+            scene.onIntroFinished = beginPlaying
             scene.onFirstLowObstacle = {
                 guard !seenSlideHint else { return }
                 seenSlideHint = true
@@ -98,10 +111,26 @@ struct GameView: View {
         }
     }
 
+    /// Play, which now rolls the opening clip rather than dropping straight
+    /// into a run.
+    ///
+    /// The card can be dropped in the same turn because the scene isn't
+    /// changing under it — the clip has been standing there behind it since the
+    /// world was built. See `stageIntro`.
     private func start() {
         scene.start()
+        withAnimation(.easeOut(duration: 0.35)) { phase = .intro }
+    }
+
+    /// The clip is over — either it played out or it was tapped away — and this
+    /// is the moment the game actually begins.
+    ///
+    /// The theme starts here rather than on Play, so the clip runs silent and
+    /// the music lands with Benny. Likewise the jump hint, which would otherwise
+    /// have come and gone before there was anything to jump.
+    private func beginPlaying() {
         Music.shared.play()
-        withAnimation(.easeOut(duration: 0.35)) { hasStarted = true }
+        withAnimation(.easeOut(duration: 0.35)) { phase = .playing }
         if !seenJumpHint {
             seenJumpHint = true
             show(.jump)
@@ -114,7 +143,7 @@ struct GameView: View {
         scene.returnToTitle()
         Music.shared.stop()
         score = 0
-        withAnimation(.easeOut(duration: 0.3)) { hasStarted = false }
+        withAnimation(.easeOut(duration: 0.3)) { phase = .title }
     }
 
     private var scoreboard: some View {
