@@ -36,6 +36,11 @@ private enum PhysicsCategory {
 private enum Layout {
     static let sceneSize = CGSize(width: 400, height: 800)
 
+    /// What `.aspectFill` crops off each side on the tallest phone, leaving
+    /// 16…384 of the 400 authored. The worst case of the shapes this is held
+    /// in, and so the edge the opening clip is framed against.
+    static let visibleInset: CGFloat = 16
+
     /// Where the dog and every obstacle stand. Set high enough that the action
     /// occupies the lower third rather than a thin strip under empty sky.
     static let groundTop: CGFloat = 280
@@ -215,47 +220,87 @@ private enum DogArt {
 /// what `Art/SliceIntroSheets.swift` prints when it cuts them, so re-cutting a
 /// redrawn sheet reprints the numbers to paste back here.
 private enum IntroArt {
-    /// Man, leash and dog together in one drawing, all fifteen aligned on the
+    /// Man, leash and dog together in one drawing, all nineteen aligned on the
     /// man's head so he holds his ground while the dog pulls away from him.
-    /// From frame ten on the dog isn't drawn at all — that is where the game's
-    /// own Benny takes over.
+    ///
+    /// They fall into four beats: 0–7 out for a walk, 8–11 Benny leaning into
+    /// the leash, 12–16 the lunge that takes it out of the man's hand, and
+    /// 17–18 the man alone, reaching after him and then diving. From frame
+    /// seventeen the dog isn't drawn at all — that is where the game's own
+    /// Benny takes over — though the slipped leash lying in the grass still is.
     static let walkFrames: [SKTexture] = numberedTextures("intro_walk")
 
-    /// A hop cycle, facing right, the way he runs off.
+    /// A gallop cycle, facing right, the way he runs off.
     static let rabbitFrames: [SKTexture] = numberedTextures("intro_rabbit")
 
-    static let walkAspect: CGFloat = 1.176
+    /// The one pose in the cycle with all four feet under him, and so the only
+    /// one that can be held still: he sits on this while the turf carries him
+    /// into the shot, and only breaks into the cycle when he runs.
+    ///
+    /// Clamped rather than assumed, so a redrawn sheet with fewer frames falls
+    /// back to the first rather than trapping.
+    static var rabbitStill: SKTexture? {
+        rabbitFrames.isEmpty ? nil : rabbitFrames[min(2, rabbitFrames.count - 1)]
+    }
+
+    static let walkAspect: CGFloat = 1.646
     static let rabbitAspect: CGFloat = 1.464
 
     /// Where the man's head sits across the drawing — the sprite's anchor, and
     /// so the point that stays put as the frames change under it.
-    static let manCentreXFraction: CGFloat = 0.354
+    static let manCentreXFraction: CGFloat = 0.334
 
-    /// Where his feet are, as a fraction up from the bottom of the canvas. Not
-    /// zero, because the canvas is sized to the running poses, whose trailing
-    /// leg reaches below where he stands.
-    static let groundLineFraction: CGFloat = 0.013
+    /// Where his feet are, as a fraction up from the bottom of the canvas. Zero
+    /// on this sheet: every pose is pinned by its own lowest foot, and no frame
+    /// draws anything below the one it is pinned by.
+    static let groundLineFraction: CGFloat = 0.000
 
     /// The drawn dog, measured on the handoff frame: how wide he is, and where
     /// he stands. The first sets the whole clip's scale, the second is where
     /// Benny is put when he takes the drawing's place.
-    static let dogWidthFraction: CGFloat = 0.490
-    static let dogCentreXFraction: CGFloat = 0.755
+    static let dogWidthFraction: CGFloat = 0.340
+    static let dogCentreXFraction: CGFloat = 0.830
+
+    /// The leftmost the drawing reaches while the man is still on his mark —
+    /// his trailing foot at full stride. `Intro.manX` is set against it, which
+    /// is the only way to put him as far left as the crop allows without
+    /// guessing.
+    ///
+    /// Measured over the walk and the lunge only. The dive reaches the canvas
+    /// edge itself, but it plays after the handoff, with the turf already
+    /// carrying him out of shot.
+    static let walkLeftFraction: CGFloat = 0.188
+
+    /// How much of the rabbit's canvas the still pose actually fills.
+    ///
+    /// The canvas is the union of all six poses and the gallop stretches it a
+    /// third wider than the sitting rabbit is, so sizing him by the canvas is
+    /// sizing him by a pose he isn't in — and the sitting pose is the one held
+    /// through the whole approach. The same trap `Layout.dogWidth` sidesteps by
+    /// measuring Benny off his collar.
+    static let rabbitStillWidthFraction: CGFloat = 0.616
 }
 
 /// How the clip is staged and paced.
 private enum Intro {
-    /// How big the clip plays, against the size the game plays at.
+    /// How big the drawing plays, against the size the game plays at.
     ///
-    /// Under life size, because three of them have to stand in one shot — the
-    /// man, the dog, and a rabbit far enough ahead of the dog to be something he
-    /// sees rather than something he is already standing on. At the size Benny
-    /// actually runs at, 400pt of scene doesn't hold them.
+    /// Only the drawing. The dog it hands over to is never scaled — he fades in
+    /// at the size he runs at and stays there, which is the whole reason this
+    /// number is no longer 0.66. At 0.66 Benny grew into his own size over the
+    /// takeoff, and a dog inflating against turf that kept its size doesn't read
+    /// as a camera closing in; it reads as a dog inflating.
     ///
-    /// It reads as the camera being further back, which is what an establishing
-    /// shot is. Benny then grows into his own size over the takeoff, coming at
-    /// the camera as the camera falls in behind him.
-    static let scale: CGFloat = 0.66
+    /// 0.76 because the two drawings disagree about what shape Benny is. At
+    /// equal width the drawn dog stands about a fifth taller than the run
+    /// sheet's gallop, so there is no size at which he matches on both — this is
+    /// the one where his height does, which is the steadier of the two: the
+    /// gallop swings 95…122pt through its own cycle but only 67…76pt tall.
+    ///
+    /// It is also as large as the shot can be staged. Every point of this eats
+    /// the width the rabbit needs to be carried in on, and past about here he
+    /// stops arriving before Benny lunges at him.
+    static let scale: CGFloat = 0.76
 
     /// Sized so the drawn dog is `scale` of the dog you then play as. That one
     /// measurement is what lets the handoff be a cut rather than a trick: Benny
@@ -265,39 +310,140 @@ private enum Intro {
         return CGSize(width: width, height: width / IntroArt.walkAspect)
     }
 
-    /// A rabbit against a beagle. Roughly half his length, which is about right
-    /// and, more to the point, small enough to read as prey.
+    /// A rabbit against a beagle. Half his length, which is about right and,
+    /// more to the point, small enough to read as prey.
+    static let rabbitLength: CGFloat = 0.5
+
+    /// Stated against the pose he is actually sitting in, not the canvas that
+    /// has to hold the gallop as well.
+    ///
+    /// Those differ by a third, which is how a rabbit asked for at half a
+    /// beagle's length came out at a third of one for the entire approach — the
+    /// only stretch of the clip he is sitting still for.
     static var rabbitSize: CGSize {
-        let width = Layout.dogWidth * scale * 0.55
+        let width = Layout.dogWidth * scale * rabbitLength / IntroArt.rabbitStillWidthFraction
         return CGSize(width: width, height: width / IntroArt.rabbitAspect)
     }
 
-    /// The man's head, and so the man. Far enough right that his trailing leg
-    /// at full stride still clears the left edge once `.aspectFill` has cropped
-    /// it — which on a tall phone takes 16pt off each side — and far enough left
-    /// to leave the dog and the rabbit room ahead of him.
-    static let manX: CGFloat = 80
+    /// The man's head, and so the man. As far left as the crop allows, which is
+    /// where he has to be: everything else in the shot stands to the right of
+    /// him, and the room the rabbit is carried in on is whatever is left.
+    ///
+    /// Placed by his trailing leg at full stride rather than picked — four
+    /// points inside what `.aspectFill` actually leaves, so a re-cut sheet moves
+    /// him rather than quietly walking his foot off the edge. Lands around 61.
+    ///
+    /// He stays on it for the whole walk now that the ground moves instead of
+    /// him, so the clearance no longer has to hold against a slide as well.
+    ///
+    /// Only his walk. The dive on the last frame reaches further left than any
+    /// of this and is cropped by it, but by then the ground is moving and he is
+    /// being carried out of shot anyway, which is the point of it.
+    static var manX: CGFloat {
+        Layout.visibleInset + 4
+            + (IntroArt.manCentreXFraction - IntroArt.walkLeftFraction) * walkerSize.width
+    }
 
-    /// The rabbit waits here: mid-screen, and a clear nose ahead of the dog,
-    /// which is where he has to be for the moment to read as Benny spotting him
-    /// rather than tripping over him.
-    static let rabbitX: CGFloat = 215
+    /// The rabbit waits here: a clear nose ahead of the dog, which is where he
+    /// has to be for the moment to read as Benny spotting him rather than
+    /// tripping over him.
+    ///
+    /// Far enough out that the drawn dog's nose at full stretch still doesn't
+    /// reach him — the sheet has Benny pulling a long way ahead of the man
+    /// before the leash goes, which puts that nose around 213 with the man
+    /// holding his mark.
+    ///
+    /// Twenty points of air between him and the drawn dog's nose at full
+    /// stretch, which the sheet puts around 246 with the man on his mark. That
+    /// stretch is the handoff frame alone; the lunge he is actually reacting to
+    /// only reaches about 182, so through the approach the gap is four times
+    /// this.
+    ///
+    /// Which is the whole budget spent. Left of here and Benny's drawing runs
+    /// into him at the cut; right of here and the turf hasn't finished carrying
+    /// him into frame by the time Benny pulls. At 291 he is clear of the right
+    /// edge at 1.07s against the pull at 0.88s — a fifth of a second late, and
+    /// he has always been a little late.
+    static let rabbitX: CGFloat = 291
 
-    /// The three beats: out for a walk, the lunge and the leash going, and the
-    /// man left standing. Five frames each.
-    static let walkFrame: TimeInterval = 0.17
-    static let lungeFrame: TimeInterval = 0.16
-    static let aloneFrame: TimeInterval = 0.17
+    /// The first two of the three beats: out for a walk, then Benny leaning into
+    /// the leash until it comes out of the man's hand. Eight frames, then nine.
+    ///
+    /// The eight are one whole stride, so `walkFrame` is that stride's length
+    /// divided by eight, and a stride is the thing to set it by: at 0.11 he
+    /// covers one in 0.88s, which is a walk with somewhere to be. The two are
+    /// set together because between them they fix `scrollSpeed`, and so how
+    /// fast the whole shot travels.
+    static let walkFrame: TimeInterval = 0.11
+    static let lungeFrame: TimeInterval = 0.14
 
-    /// The rabbit's cue, measured from the tap, and how long he takes to clear
-    /// the screen. The cue lands inside the walk, so he is up and crossing
-    /// before Benny goes rather than after.
-    static let rabbitCue: TimeInterval = 1.15
+    /// How much ground one stride of the drawn walk covers.
+    ///
+    /// He used to be slid forward by this against a world held still, which is
+    /// the one thing a walk cycle can't survive: the turf was the only reference
+    /// and it wasn't moving, so the travel had to be faked and any amount of it
+    /// read as a treadmill. Now the turf moves instead, and this is what sets how
+    /// fast — his legs and the grass are tied to the same number, so his feet
+    /// only slip if this disagrees with what the sheet actually draws.
+    ///
+    /// A fraction of the drawing rather than a distance, because that is what a
+    /// stride is: restage the clip at a different size and the same drawn legs
+    /// cover more ground, so a fixed number here would put him straight back on
+    /// a treadmill. 0.206 is the 50pt this used to be, against the 243pt-wide
+    /// drawing it was measured on.
+    ///
+    /// Short of a real stride even so. Raising it speeds the whole shot up,
+    /// because everything below is measured off it.
+    static let strideFraction: CGFloat = 0.206
+    static var walkTravel: CGFloat { walkerSize.width * strideFraction }
+
+    /// The pace the world rolls at through the clip, as a speed and as the
+    /// fraction of `gameSpeed` that `worldScroll` actually holds.
+    ///
+    /// Not chosen — divided out of the walk. One stride is `walkTravel` long and
+    /// takes eight frames, so this is the speed at which the ground passes under
+    /// a man whose legs are drawing that stride at that cadence.
+    static var scrollSpeed: CGFloat { walkTravel / CGFloat(8 * walkFrame) }
+    static var scrollFraction: CGFloat { scrollSpeed / Layout.openingSpeed }
+
+    /// How long the clip takes to reach the handoff: the walk, the lunge, and the
+    /// single frame the handover is made across. The rabbit's whole approach is
+    /// timed against this, so it is derived here rather than counted twice.
+    static var toHandoff: TimeInterval { 8 * walkFrame + 8 * lungeFrame + lungeFrame }
+
+    /// Slower than the rest, because there are only two of them and they are the
+    /// beat that has to land: the man reaching after Benny, and the man diving.
+    static let aloneFrame: TimeInterval = 0.20
+
+    /// Where the rabbit is planted, off the right of the scene, so that the turf
+    /// delivers him to `rabbitX` exactly as the leash goes.
+    ///
+    /// There is no cue and no fade any more: he is sitting in the grass from the
+    /// first frame, and the shot travelling towards him is what brings him on.
+    /// He starts around 431, well off the right of the scene; his nose crosses
+    /// what is actually shown a third of a second in, and he is clear of it and
+    /// full in frame at about 1.06s — just after Benny starts pulling at 0.88s,
+    /// so the pull still reads as a reaction to seeing him.
+    static var rabbitStartX: CGFloat { rabbitX + scrollSpeed * CGFloat(toHandoff) }
+
+    /// How fast he goes when he breaks, and for how long.
+    ///
+    /// Against the camera, not the ground — which is the whole difference from
+    /// the old clip, where the world was standing still and any speed at all took
+    /// him off the edge. By the end of `pickUp` the shot is moving at
+    /// `openingSpeed` itself, so a rabbit at that speed would hang exactly where
+    /// he is and one below it would slide backwards into Benny's teeth. The
+    /// margin over it is what "getting away" is.
+    static var rabbitRunSpeed: CGFloat { Layout.openingSpeed * 1.3 }
     static let rabbitBolt: TimeInterval = 1.05
 
     /// Benny fading in over the drawing of himself, and then how long he takes
     /// to settle into the place he runs from.
-    static let handoff: TimeInterval = 0.14
+    ///
+    /// The fade is a shade shorter than `lungeFrame`, which is how long that
+    /// drawing is up for: he wants to be fully opaque by the time it goes, or
+    /// the cut lands on a half-faded dog.
+    static let handoff: TimeInterval = 0.12
     static let takeoff: TimeInterval = 0.9
 
     /// How long the world takes to get up to speed once he goes.
@@ -305,7 +451,7 @@ private enum Intro {
 
     /// A beat on Benny running, the man already carried out of frame behind
     /// him, before the score comes up over the top.
-    static let hold: TimeInterval = 0.45
+    static let hold: TimeInterval = 0.55
 }
 
 // MARK: - The obstacle artwork
@@ -498,16 +644,22 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var isIntro = false
     private var intro: SKNode?
 
+    /// The rabbit, held separately because he is the one thing in the clip that
+    /// moves with the turf *before* the stage does — see `update`.
+    private weak var introRabbit: SKSpriteNode?
+
     /// Whether the clip is being carried along by the turf yet.
     ///
-    /// It isn't while the man is walking: the world is standing still under him,
-    /// and letting him ride it would drag him off the left edge before he had
-    /// said anything. From the handoff on it is exactly what leaves him behind.
+    /// It isn't while the man is walking. The turf is moving by then, but at the
+    /// pace his own stride sets — riding it would take him backwards out of shot
+    /// while he is still the thing being watched. From the handoff on, when the
+    /// world winds up to Benny's speed, it is exactly what leaves him behind.
     private var introRidesAlong = false
 
     /// How much of `gameSpeed` the turf is actually moving at. One, except
-    /// during the clip, which holds the world still while the man walks his dog
-    /// across it and then lets it go as Benny does.
+    /// during the clip: nothing at all behind the title card, a fifth of it while
+    /// the man walks his dog — a walking pace, and the pace that brings the
+    /// rabbit into shot — and then all of it as Benny goes.
     ///
     /// Kept apart from `gameSpeed` itself, which also sets how fast Benny's legs
     /// turn over — winding *that* down to nothing would freeze his gallop at
@@ -1152,9 +1304,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// Staged up front there is nothing to swap. Play starts the beats, and the
     /// card comes off a scene that has had the man standing in it all along.
     private func stageIntro() {
-        guard IntroArt.walkFrames.count >= 15, !IntroArt.rabbitFrames.isEmpty else { return }
+        guard IntroArt.walkFrames.count >= 19, !IntroArt.rabbitFrames.isEmpty else { return }
 
-        // The world stands still under him until he loses the dog.
+        // Nothing moves behind the title card. The man is standing in it, and a
+        // world rolling under a man standing still is the one thing that would
+        // give the drawing away.
         worldScroll = 0
         scenery.speed = 0
 
@@ -1175,16 +1329,19 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         walker.position = CGPoint(x: Intro.manX, y: Layout.dogGroundLine)
         stage.addChild(walker)
 
-        // Out in the grass, and not yet worth looking at.
-        let rabbit = SKSpriteNode(texture: IntroArt.rabbitFrames[0], size: Intro.rabbitSize)
+        // Sitting in the grass off the right of the shot, in the pose that has
+        // all four feet under him. He is drawn from the first frame — the walk
+        // travelling towards him is what brings him on, so there is nothing to
+        // fade in and nothing to cue.
+        let rabbit = SKSpriteNode(texture: IntroArt.rabbitStill, size: Intro.rabbitSize)
         rabbit.name = "rabbit"
         // The sheet's lowest pose sits on the floor of its canvas, so the floor
         // is the ground — and the airborne poses ride above it on their own,
         // which is the hop.
         rabbit.anchorPoint = CGPoint(x: 0.5, y: 0)
-        rabbit.position = CGPoint(x: Intro.rabbitX, y: Layout.dogGroundLine)
-        rabbit.alpha = 0
+        rabbit.position = CGPoint(x: Intro.rabbitStartX, y: Layout.dogGroundLine)
         stage.addChild(rabbit)
+        introRabbit = rabbit
     }
 
     /// Starts the clip running. Everything it moves is already on screen; this
@@ -1192,10 +1349,17 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func runIntro() {
         isIntro = true
 
+        // The shot starts moving with him. Stepped rather than ramped: at 57pt/s
+        // there is nothing to ease into, and an ease would cost the rabbit a
+        // tenth of a second of travel that his arrival on the mark is measured
+        // against.
+        worldScroll = Intro.scrollFraction
+        scenery.speed = Intro.scrollFraction
+
         let frames = IntroArt.walkFrames
         guard let stage = intro,
               let walker = stage.childNode(withName: "walker") as? SKSpriteNode,
-              let rabbit = stage.childNode(withName: "rabbit")
+              stage.childNode(withName: "rabbit") != nil
         else {
             // No artwork, no clip — the same stance `makeDog` takes with its
             // placeholder. The game still starts.
@@ -1203,50 +1367,61 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             return
         }
 
-        // Two turns of the walk, with the man covering a little ground under it
-        // so he reads as walking rather than treading; then the lunge and the
-        // leash going; then the five frames with no dog drawn in them, over
-        // which he gives chase, gives up, and stops.
-        walker.run(.moveBy(x: 20, y: 0, duration: 10 * Intro.walkFrame))
+        // One turn of the walk; then the lunge and the leash going; then the two
+        // frames with no dog drawn in them, over which he reaches after Benny,
+        // dives, and misses.
+        //
+        // Frame sixteen is split out of the lunge because it is the one the
+        // handover happens across: Benny fades up over the drawing of himself
+        // while it is still on screen, and only once it goes does he leave.
+        //
+        // He holds his ground while he does it. The turf moving under him at the
+        // pace his own stride sets is what carries him now, and adding a slide on
+        // top would be that travel counted twice.
         walker.run(.sequence([
-            .repeat(.animate(with: Array(frames[0...4]), timePerFrame: Intro.walkFrame), count: 2),
-            .animate(with: Array(frames[5...9]), timePerFrame: Intro.lungeFrame),
+            .animate(with: Array(frames[0...7]), timePerFrame: Intro.walkFrame),
+            .animate(with: Array(frames[8...15]), timePerFrame: Intro.lungeFrame),
+            .run { [weak self] in self?.bennyAppears() },
+            .animate(with: Array(frames[16...16]), timePerFrame: Intro.lungeFrame),
             .run { [weak self] in self?.handOff() },
-            .animate(with: Array(frames[10...]), timePerFrame: Intro.aloneFrame),
+            .animate(with: Array(frames[17...]), timePerFrame: Intro.aloneFrame),
             .wait(forDuration: Intro.hold),
             .run { [weak self] in self?.finishIntro() },
         ]))
 
-        // The rabbit sits tight until Benny is close, then breaks and is off the
-        // right of the screen inside a second.
-        let bolt = SKAction.moveBy(x: 240, y: 0, duration: Intro.rabbitBolt)
-        bolt.timingMode = .easeIn  // a standing start, not a passing car
-
-        rabbit.run(.sequence([
-            .wait(forDuration: Intro.rabbitCue),
-            .fadeIn(withDuration: 0.12),
-            .run { [weak rabbit] in
-                rabbit?.run(.repeatForever(.animate(with: IntroArt.rabbitFrames, timePerFrame: 0.07)))
-            },
-            .wait(forDuration: 0.28),  // seen, and not yet moving
-            bolt,
-            .removeFromParent(),
-        ]))
+        // The rabbit has no beats of his own. He is carried in by the turf —
+        // `update` walks him — and he breaks in `handOff`, which is the moment
+        // the leash goes, because those are the same moment.
     }
 
-    /// The drawing stops drawing the dog and the game starts simulating him — in
-    /// the same place, at the same size, under a fade just long enough to cover
-    /// the change of pose.
-    private func handOff() {
+    /// Benny fades up on top of the last drawing of himself, still standing on
+    /// the spot, while that drawing is still on screen.
+    ///
+    /// The overlap is the whole point, and it is why this is separate from
+    /// `handOff`. Fade him in on the frame *after* the drawing has gone and
+    /// there is an instant with no dog on screen at all — half of a very short
+    /// beat in which the man is reaching after nothing. Fade him in while the
+    /// drawing is still there and the two are the same dog, in the same place,
+    /// at the same size, one dissolving into the other. Which also means he must
+    /// not move yet: a dissolve between two things standing still reads as one
+    /// thing, and the moment he starts pulling away it reads as two.
+    private func bennyAppears() {
         dog.removeAllActions()
         dog.position = CGPoint(x: drawnDogX, y: Layout.dogGroundLine + Layout.dogSize.height / 2)
-        // He comes in at the size the drawing had him and grows into his own
-        // over the takeoff, which is the camera closing on him.
-        dog.setScale(Intro.scale)
+        // At the size he runs at, which is the size the drawing has him — and
+        // the size he stays. He used to come in at the drawing's 0.66 and grow
+        // into his own over the takeoff; a dog swelling against turf that keeps
+        // its size doesn't read as a camera closing in, it reads as a dog
+        // swelling.
+        dog.setScale(1)
         dog.isHidden = false
         dog.alpha = 0
         dog.run(.fadeIn(withDuration: Intro.handoff))
+    }
 
+    /// The drawing stops drawing the dog, and the dog `bennyAppears` left
+    /// standing in its place goes.
+    private func handOff() {
         // The camera goes with Benny: the turf starts moving, the hills pick up,
         // and the man — pinned to the turf by `update` — is carried backwards
         // out of frame.
@@ -1256,17 +1431,33 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         // He drifts left against the screen while the ground goes left faster,
         // which nets out as him pulling away — and lands him on the mark he runs
-        // from for the rest of the game.
-        let settle = SKAction.group([
-            .moveTo(x: Layout.dogX, duration: Intro.takeoff),
-            .scale(to: 1, duration: Intro.takeoff),
-        ])
+        // from for the rest of the game. Travel only: he is already the size he
+        // plays at, and nothing about him changes again.
+        let settle = SKAction.moveTo(x: Layout.dogX, duration: Intro.takeoff)
         settle.timingMode = .easeOut
         dog.run(settle)
 
         // The man gets a step or two after him before the fight goes out of it.
         intro?.childNode(withName: "walker")?
-            .run(.moveBy(x: 24, y: 0, duration: Intro.aloneFrame * 3))
+            .run(.moveBy(x: 24, y: 0, duration: Intro.aloneFrame * 2))
+
+        // And the rabbit, who has been sitting on the mark waiting for exactly
+        // this, breaks. He is inside the stage, and the stage now rides the turf,
+        // so the distance he is given here is ground covered rather than screen
+        // crossed — which is what lets `rabbitRunSpeed` be stated against the
+        // speed of the chase.
+        if let rabbit = introRabbit {
+            rabbit.run(.repeatForever(.animate(with: IntroArt.rabbitFrames, timePerFrame: 0.07)))
+            let bolt = SKAction.moveBy(
+                x: Intro.rabbitRunSpeed * CGFloat(Intro.rabbitBolt), y: 0,
+                duration: Intro.rabbitBolt
+            )
+            // A standing start, but only just: the ground is accelerating under
+            // him from this frame, and a longer ease would have it out-run him
+            // for the first tenth and drag him backwards as he sets off.
+            bolt.timingMode = .easeIn
+            rabbit.run(.sequence([bolt, .removeFromParent()]))
+        }
     }
 
     /// Where the sheet last drew the dog, in scene coordinates.
@@ -1287,6 +1478,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         intro?.removeFromParent()
         intro = nil
+        introRabbit = nil
 
         removeAction(forKey: "worldScroll")
         worldScroll = 1
@@ -1335,7 +1527,16 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // that when the world does start moving he can't moonwalk against it.
         let step = gameSpeed * worldScroll * CGFloat(delta)
         scrollGroundDetail(by: step)
-        if introRidesAlong { intro?.position.x -= step }
+        if introRidesAlong {
+            intro?.position.x -= step
+        } else if isIntro {
+            // The rabbit is out in the world rather than part of the shot, so he
+            // is walked by the same step the grass is: whatever the scroll does,
+            // he cannot slide against the ground he is sitting on. Once the stage
+            // rides along it carries him, and stepping him here as well would
+            // move him twice.
+            introRabbit?.position.x -= step
+        }
 
         // Benny's legs keep pace with the ground. Without this the gait stays
         // fixed while the world accelerates, and by the top speed he looks like

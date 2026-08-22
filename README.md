@@ -33,22 +33,29 @@ asset catalogue — Benny, the things he jumps, and the opening clip.
 
 ### The opening
 
-Play doesn't drop straight into a run. A ~4 second clip says why Benny is
-running, and it plays *inside* the scene — same sky, same hills, same turf — so
-there is nothing to cut to when it ends. What ends it is the artwork handing
-over: the sheet stops drawing the dog, Benny fades in where the drawing left him
-at the drawing's size, and the world starts moving under him as he grows into
-his own. A tap skips it. It plays on every Play and never on a retry, which
-falls out of `hasStarted` surviving `restart` and not `returnToTitle`.
+Play doesn't drop straight into a run. A ~3 second clip says why Benny is
+running — a man out walking him, a rabbit up ahead, and the leash going — and it
+plays *inside* the scene, same sky, same hills, same turf, so there is nothing
+to cut to when it ends. What ends it is the artwork handing over: on the last
+frame that still draws the dog, Benny fades up on top of that drawing, in the
+same place and at the same size and both standing still, so the dissolve reads
+as one dog rather than two; then the drawing goes, the world starts moving under
+him, and he grows into his own size as the camera closes on him. A tap skips it.
+It plays on every Play and never on a retry, which falls out of `hasStarted`
+surviving `restart` and not `returnToTitle`.
 
 The two source sheets live in `Art/`, and `swift Art/SliceIntroSheets.swift`
-cuts them. Neither arrived usable: both are flat RGB with the background
-*painted* rather than an alpha channel, and the man-and-dog sheet only looks like
-a grid — the pairs are drawn at their own spacing, and on the middle row one
-dog's nose overlaps the next man's hand, so no set of straight cuts separates
-all fifteen frames. The script finds them by what is joined to what instead, and
-keys the background by flooding inward from the border so that white *enclosed*
-by a drawing — Benny's chest, the man's shirt — survives. It prints the handful
+cuts them. Neither arrived usable: both have the background *painted* rather
+than carried in an alpha channel, and the man-and-dog sheet only looks like a
+row of cells — the pairs are drawn at their own spacing, and through the walk
+each dog's nose reaches back past where the next man's trailing heel starts, so
+no set of straight cuts separates all nineteen frames. The script finds them by
+what is joined to what instead, and keys the background by flooding inward from
+the border so that white *enclosed* by a drawing — Benny's chest, the man's
+shirt — survives. Joined-to-what also decides what a frame *contains*: while the
+leash is in the man's hand it joins him to the dog and the two come back as one
+figure, and only once it slips are there a dog and a dropped leash to tell apart
+from him. It prints the handful
 of fractions `IntroArt` is built from, so re-cutting a redrawn sheet reprints
 the numbers to paste back.
 

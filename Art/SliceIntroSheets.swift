@@ -11,9 +11,11 @@
 //  Run from the repository root. Rerunning it overwrites the frames in place,
 //  so retouching a sheet is a rerun rather than a hand edit.
 //
-//  Both sheets arrive as flat RGB with the background *painted* — plain white on
-//  the walk sheet, a fake transparency checkerboard on the rabbit sheet — so the
-//  background has to be keyed out rather than read off an alpha channel.
+//  Both sheets arrive with the background *painted* — plain white on the walk
+//  sheet, a fake transparency checkerboard on the rabbit sheet — so the
+//  background has to be keyed out rather than read off an alpha channel. The
+//  walk sheet does carry an alpha channel, but all it holds is a scatter of
+//  holes along its right-hand edge; `load` lays both over white to be rid of it.
 //
 //  It also prints the handful of fractions `IntroArt` in GameScene.swift is
 //  built from. They are measured off the artwork rather than typed in by hand,
@@ -75,23 +77,36 @@ private struct Key {
 }
 
 private enum Find {
-    /// A figure counts as the man if it reaches into the top of its row and
-    /// stands most of the row's height. He is half again the dog's height in
-    /// every pose, so this separates them with room to spare — and it is how
-    /// each row is cut into five frames.
-    static let manTopBand = 0.35
-    static let manHeight = 0.55
+    /// A figure counts as the man if it reaches into the top of the row and
+    /// stands most of the row's height. Height is what actually does the work:
+    /// the shortest man on the sheet is the one diving after Benny at the end,
+    /// at 227px, and the tallest dog is the one leaping out of the leash, at
+    /// 160. Nothing lands between them, so the cut has a wide berth on both
+    /// sides — and it is how the row is cut into its nineteen frames.
+    ///
+    /// The top band is the looser of the two for the same reason: that diving
+    /// man has his head down at 0.29 of the row, lower than any other pose, and
+    /// the band has to reach him.
+    static let manTopBand = 0.45
+    static let manHeight = 0.60
 
     /// How much of the man's crown is averaged to find where he stands
     /// horizontally. His head is the one landmark that keeps its size and shape
-    /// in all fifteen poses, which is what makes it the thing to align on — the
+    /// in all nineteen poses, which is what makes it the thing to align on — the
     /// same reasoning that aligns Benny's own frames on his collar.
     static let crown = 45
 
-    /// Smaller than this and it is a fleck of stray anti-aliasing, not a
-    /// drawing. Worth saying out loud because the rightmost thing in a row is
-    /// taken to be the dog, and one speck past his nose would elect itself.
-    static let speck = 24
+    /// Smaller than this, either way, and it is a stray rather than a drawing.
+    /// Worth saying out loud because the rightmost thing in the row is taken to
+    /// be the dog, and one speck past his nose would elect itself.
+    ///
+    /// Height is what the threshold is really set by. What survives keying and
+    /// isn't drawing is the dark core of a contact shadow, and those come out as
+    /// slivers — 28 to 163 wide and never more than five tall. The smallest
+    /// thing actually drawn is the slipped leash lying in the grass on the last
+    /// frame, at 56 by 22. So anything with real height to it is a drawing, and
+    /// the cutoff sits in the wide gap between five and twenty-two.
+    static let speck = 12
 }
 
 // MARK: - Bitmap
@@ -131,7 +146,7 @@ private func load(_ path: String) -> Bitmap {
     }
     var bitmap = Bitmap(width: image.width, height: image.height)
     bitmap.pixels.withUnsafeMutableBytes { buffer in
-        CGContext(
+        let context = CGContext(
             data: buffer.baseAddress,
             width: image.width,
             height: image.height,
@@ -139,7 +154,14 @@ private func load(_ path: String) -> Bitmap {
             bytesPerRow: image.width * 4,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        )!.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        )!
+        // Laid over white first. The walk sheet carries an alpha channel with a
+        // scatter of fully transparent pixels along its right-hand edge, and
+        // premultiplied those read back as black — which is to say as ink, in
+        // the one place the flood needs clear paper to start from.
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
     }
     return bitmap
 }
@@ -352,12 +374,18 @@ private struct Figure {
 
 /// Labels every connected run of opaque pixels in the sheet.
 ///
-/// The sheet looks like a grid and isn't: the pairs are drawn at their own
-/// spacing, so a figure regularly crosses where the grid line would fall, and
-/// on the middle row one dog's nose overlaps the next man's outstretched hand in
-/// x. There is no vertical cut that separates all fifteen frames. What does
-/// separate them is that the drawings never *touch* — so the frames are found by
-/// what is joined to what, and the grid is never used at all.
+/// The sheet is one long row and it is not a grid: the pairs are drawn at their
+/// own spacing, and through most of the walk each dog's nose reaches past where
+/// the next man's trailing heel starts — frames one and two share seventeen
+/// columns, and so do two, three, four, five and six. There is no vertical cut
+/// that separates all nineteen frames. What does separate them is that the
+/// drawings never *touch* — so the frames are found by what is joined to what,
+/// and a grid is never used at all.
+///
+/// Which also means a frame is not always more than one figure. For as long as
+/// the leash is in the man's hand it joins him to the dog, and the pair come
+/// back as a single blob; only from the frame it slips do the two separate, and
+/// only then is there a dog to be told apart from him.
 private func figures(in sheet: Bitmap) -> (labels: [Int], figures: [Figure]) {
     var labels = [Int](repeating: -1, count: sheet.width * sheet.height)
     var found: [Figure] = []
@@ -396,8 +424,9 @@ private func figures(in sheet: Bitmap) -> (labels: [Int], figures: [Figure]) {
     return (labels, found)
 }
 
-/// The rows the sheet's three bands of drawing occupy, found from the blank
-/// gutters between them. Unlike the columns, these are clean.
+/// The rows the sheet's drawing occupies, found from the blank gutters around
+/// it. The walk sheet is a single row and so gives back a single band; the
+/// gutters are clean either way, which the columns are not.
 private func bands(of sheet: Bitmap) -> [Box] {
     var rows: [Bool] = []
     for y in 0..<sheet.height {
@@ -446,7 +475,10 @@ private func scenes(in band: Box, all: [Figure], sheet: Bitmap) -> [Scene] {
     return men.enumerated().map { index, man in
         let nextMan = index + 1 < men.count ? men[index + 1].box.left : sheet.width
         // Everything standing between this man and the next belongs to him.
-        // Ordered left to right, so his dog — always out in front — is last.
+        // Ordered left to right, so his dog — always out in front, with the
+        // slipped leash trailing behind it — is last. On the frames where the
+        // leash is still in his hand there is nothing here at all: the dog is
+        // joined to him and came back as part of him.
         let company = inBand
             .filter { $0.label != man.label && $0.box.centreX > man.box.left && $0.box.centreX < nextMan }
             .sorted { $0.box.centreX < $1.box.centreX }
@@ -456,10 +488,17 @@ private func scenes(in band: Box, all: [Figure], sheet: Bitmap) -> [Scene] {
 
 /// Where a frame is pinned: the man's crown horizontally, his feet vertically.
 ///
-/// Pinning him rather than the cell is what makes the fifteen poses play as one
+/// Pinning him rather than the cell is what makes the nineteen poses play as one
 /// shot. The sheet's pairs are each framed on their own, so cell-relative
 /// positions would have the man skating about the screen between frames; pinned,
 /// he holds his ground and walks because the node walks.
+///
+/// The feet are read off the bottom of his whole figure, which for most of the
+/// clip is the bottom of the blob he and the dog make together. That is his own
+/// foot and not a paw: the dog is drawn beside and then ahead of him but never
+/// below him, so on all nineteen frames the lowest thing in the drawing is a
+/// shoe. Worth checking again if the sheet is ever redrawn with him lifted off
+/// the ground, because then it wouldn't be.
 private func anchor(of scene: Scene, in sheet: Bitmap, labels: [Int]) -> (x: Int, y: Int) {
     var sum = 0, count = 0
     for y in scene.man.box.top..<min(scene.man.box.top + Find.crown, scene.man.box.bottom) {
@@ -532,11 +571,25 @@ private func ratio(_ value: Int, of total: Int) -> String {
 
 // MARK: - The walk sheet
 
-/// Where the clip hands over to the game. Up to here the dog is drawn on the
-/// sheet; from here on Benny's own gallop stands in for him and runs off, so the
-/// game never cuts between two different drawings of him mid-stride — and the
-/// man is left alone on screen, which is the whole point of the shot.
-private let handoff = 9
+/// The last frame that still draws the dog. After it Benny's own gallop stands
+/// in and runs off, so the game never cuts between two different drawings of him
+/// mid-stride — and the man is left alone on screen, which is the whole point of
+/// the shot.
+///
+/// Sixteen and not the frame the leash actually comes free on, which is fifteen.
+/// The swap wants a drawn gallop to land on, because a gallop is what Benny is
+/// doing when he fades in: this frame is where his size is measured as well as
+/// where he is put, and fifteen draws him gathered up in mid-leap — a foot
+/// narrower than the same dog running, which would size the whole clip up by as
+/// much. Sixteen is the first clean gallop, so it is the one to cut on.
+private let handoff = 16
+
+/// The rabbit pose the clip holds through the whole approach: the one with all
+/// four feet under him, and so the only one that can be stood still on.
+/// `IntroArt.rabbitStill` picks the same frame, and the fraction printed for it
+/// below is what sizes him — the canvas is stretched by the gallop and this
+/// pose doesn't fill it.
+private let still = 2
 
 print("walk sheet")
 
@@ -553,7 +606,7 @@ for band in bands(of: walkSheet) {
     walkScenes += scenes(in: band, all: walkFigures, sheet: walkSheet)
 }
 print("  \(walkScenes.count) frames from \(bands(of: walkSheet).count) rows")
-guard walkScenes.count == 15 else { fatalError("expected 15 frames, found \(walkScenes.count)") }
+guard walkScenes.count == 19 else { fatalError("expected 19 frames, found \(walkScenes.count)") }
 
 // From the handoff on, the drawn dog is dropped: the game's Benny is standing in
 // for him by then, and two dogs on screen would give the trick away.
@@ -563,7 +616,7 @@ private let kept: [[Figure]] = walkScenes.enumerated().map { index, scene in
 
 private let walkAnchors = walkScenes.map { anchor(of: $0, in: walkSheet, labels: walkLabels) }
 
-// One canvas for all fifteen, sized around the anchor rather than around the
+// One canvas for all nineteen, sized around the anchor rather than around the
 // sheet, so every frame can be drawn at one position and one size.
 private var walkCanvas = Box.empty
 for (index, figures) in kept.enumerated() {
@@ -575,6 +628,14 @@ for (index, figures) in kept.enumerated() {
     ))
 }
 print("  canvas \(walkCanvas.width)x\(walkCanvas.height)")
+
+// How far left the drawing reaches while the man is still on his mark — his
+// trailing foot at full stride, canvas-relative. `Intro.manX` is placed by it.
+// The frames after the handoff reach further, the dive furthest of all, but the
+// turf is carrying him out of shot by then and the crop is welcome to them.
+private let walkLeft = kept[0...handoff].enumerated().map { index, figures in
+    figures.dropFirst().reduce(figures[0].box) { $0.union($1.box) }.left - walkAnchors[index].x
+}.min()! - walkCanvas.left
 
 private var walkFrames: [Bitmap] = []
 for (index, scene) in walkScenes.enumerated() {
@@ -656,7 +717,8 @@ for (index, cell) in rabbitCells.enumerated() {
 
 // Everything below is measured off the artwork rather than guessed, and printed
 // to be pasted into `IntroArt`. Re-cut a redrawn sheet and the numbers follow.
-private let manBottom = walkScenes[14].man.box.bottom - walkAnchors[14].y - walkCanvas.top
+private let last = walkScenes.count - 1
+private let manBottom = walkScenes[last].man.box.bottom - walkAnchors[last].y - walkCanvas.top
 private let dogLeft = dogBox.left - handoffAnchor.x - walkCanvas.left
 private let dogBottom = dogBox.bottom - handoffAnchor.y - walkCanvas.top
 private let plantedRabbit = rabbitBoxes.enumerated()
@@ -671,7 +733,9 @@ paste into IntroArt:
     static let groundLineFraction: CGFloat = \(ratio(walkCanvas.height - manBottom, of: walkCanvas.height))
     static let dogWidthFraction: CGFloat = \(ratio(dogBox.width, of: walkCanvas.width))
     static let dogCentreXFraction: CGFloat = \(ratio(dogLeft + dogBox.width / 2, of: walkCanvas.width))
+    static let walkLeftFraction: CGFloat = \(ratio(walkLeft, of: walkCanvas.width))
     static let dogGroundLineFraction: CGFloat = \(ratio(walkCanvas.height - dogBottom, of: walkCanvas.height))
     static let rabbitAspect: CGFloat = \(ratio(rabbitCanvas.width, of: rabbitCanvas.height))
+    static let rabbitStillWidthFraction: CGFloat = \(ratio(rabbitBoxes[still].width, of: rabbitCanvas.width))
     static let rabbitGroundLineFraction: CGFloat = \(ratio(rabbitCanvas.height - plantedRabbit, of: rabbitCanvas.height))
 """)
