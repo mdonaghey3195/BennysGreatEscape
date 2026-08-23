@@ -233,18 +233,25 @@ private enum IntroArt {
     /// A gallop cycle, facing right, the way he runs off.
     static let rabbitFrames: [SKTexture] = numberedTextures("intro_rabbit")
 
-    /// The one pose in the cycle with all four feet under him, and so the only
-    /// one that can be held still: he sits on this while the turf carries him
-    /// into the shot, and only breaks into the cycle when he runs.
+    /// The same rabbit before anything has startled him: six poses of him
+    /// grazing, which is what he is doing while the walk comes towards him.
     ///
-    /// Clamped rather than assumed, so a redrawn sheet with fewer frames falls
-    /// back to the first rather than trapping.
-    static var rabbitStill: SKTexture? {
-        rabbitFrames.isEmpty ? nil : rabbitFrames[min(2, rabbitFrames.count - 1)]
-    }
+    /// He used to hold a single pose of the gallop through the whole approach,
+    /// and a rabbit sitting perfectly still in the grass reads as scenery — the
+    /// shot wants something for Benny to have noticed.
+    ///
+    /// His own sheet, drawn at its own scale, so the two rabbits are matched by
+    /// what they draw rather than by their canvases — see `Intro.grazeSize`.
+    static let grazeFrames: [SKTexture] = numberedTextures("intro_graze")
+
+    /// The pose the graze opens on and comes back to: sitting up, head clear of
+    /// the grass. Also what he is holding when the clip is staged behind the
+    /// title card, which is why it is the first frame and not a nibble.
+    static var grazeStill: SKTexture? { grazeFrames.first }
 
     static let walkAspect: CGFloat = 1.646
     static let rabbitAspect: CGFloat = 1.464
+    static let grazeAspect: CGFloat = 1.087
 
     /// Where the man's head sits across the drawing — the sprite's anchor, and
     /// so the point that stays put as the frames change under it.
@@ -275,10 +282,28 @@ private enum IntroArt {
     ///
     /// The canvas is the union of all six poses and the gallop stretches it a
     /// third wider than the sitting rabbit is, so sizing him by the canvas is
-    /// sizing him by a pose he isn't in — and the sitting pose is the one held
-    /// through the whole approach. The same trap `Layout.dogWidth` sidesteps by
-    /// measuring Benny off his collar.
+    /// sizing him by a pose he isn't in. The same trap `Layout.dogWidth`
+    /// sidesteps by measuring Benny off his collar.
     static let rabbitStillWidthFraction: CGFloat = 0.616
+
+    /// How tall the sitting rabbit stands in the graze canvas, and how tall the
+    /// still pose stands in the gallop's. Between them they make one rabbit of
+    /// two sheets drawn at two scales: `Intro.grazeSize` stretches the graze
+    /// canvas until those two poses come out the same height.
+    ///
+    /// Height and not width, because he is the same animal in two attitudes —
+    /// sitting up he is short and deep, stretched down into the grass he is long
+    /// and low — and his height is the one of the two that survives the change.
+    static let rabbitStillHeightFraction: CGFloat = 0.863
+    static let grazeSitHeightFraction: CGFloat = 0.948
+
+    /// Where the sitting rabbit's own centre falls across the graze canvas.
+    ///
+    /// Not the middle of it: the canvas is stretched rightwards by the poses
+    /// that reach down into the grass, so the sitting pose sits left of centre
+    /// in it. Anchoring on this is what keeps `Intro.rabbitX` meaning the same
+    /// place when the sheet under him changes.
+    static let grazeSitCentreXFraction: CGFloat = 0.396
 }
 
 /// How the clip is staged and paced.
@@ -324,6 +349,27 @@ private enum Intro {
         let width = Layout.dogWidth * scale * rabbitLength / IntroArt.rabbitStillWidthFraction
         return CGSize(width: width, height: width / IntroArt.rabbitAspect)
     }
+
+    /// The graze canvas, scaled until the rabbit sitting up in it stands exactly
+    /// as tall as the rabbit that runs off — the only way two sheets drawn at
+    /// two scales end up the same animal.
+    ///
+    /// Stated against `rabbitSize` rather than against Benny, so the pair can
+    /// only move together: restage the clip and both follow.
+    static var grazeSize: CGSize {
+        let height = rabbitSize.height
+            * IntroArt.rabbitStillHeightFraction / IntroArt.grazeSitHeightFraction
+        return CGSize(width: height * IntroArt.grazeAspect, height: height)
+    }
+
+    /// How long he holds each pose of the graze.
+    ///
+    /// Six poses at this is one cycle in a little over a second — head down,
+    /// three of nibbling, and up again — which is about as long as he is on
+    /// screen for. He is clear of the right edge at 1.06s and gone at
+    /// `toHandoff`, so a slower graze would show him eating without ever
+    /// finishing a mouthful.
+    static let grazeFrame: TimeInterval = 0.18
 
     /// The man's head, and so the man. As far left as the crop allows, which is
     /// where he has to be: everything else in the shot stands to the right of
@@ -1304,7 +1350,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// Staged up front there is nothing to swap. Play starts the beats, and the
     /// card comes off a scene that has had the man standing in it all along.
     private func stageIntro() {
-        guard IntroArt.walkFrames.count >= 19, !IntroArt.rabbitFrames.isEmpty else { return }
+        guard IntroArt.walkFrames.count >= 19,
+              !IntroArt.rabbitFrames.isEmpty, !IntroArt.grazeFrames.isEmpty
+        else { return }
 
         // Nothing moves behind the title card. The man is standing in it, and a
         // world rolling under a man standing still is the one thing that would
@@ -1329,16 +1377,18 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         walker.position = CGPoint(x: Intro.manX, y: Layout.dogGroundLine)
         stage.addChild(walker)
 
-        // Sitting in the grass off the right of the shot, in the pose that has
-        // all four feet under him. He is drawn from the first frame — the walk
-        // travelling towards him is what brings him on, so there is nothing to
-        // fade in and nothing to cue.
-        let rabbit = SKSpriteNode(texture: IntroArt.rabbitStill, size: Intro.rabbitSize)
+        // Grazing in the grass off the right of the shot. He is drawn from the
+        // first frame — the walk travelling towards him is what brings him on,
+        // so there is nothing to fade in and nothing to cue — but he holds the
+        // sitting pose until the clip actually starts, because nothing moves
+        // behind the title card.
+        let rabbit = SKSpriteNode(texture: IntroArt.grazeStill, size: Intro.grazeSize)
         rabbit.name = "rabbit"
-        // The sheet's lowest pose sits on the floor of its canvas, so the floor
-        // is the ground — and the airborne poses ride above it on their own,
-        // which is the hop.
-        rabbit.anchorPoint = CGPoint(x: 0.5, y: 0)
+        // Every pose on the graze sheet is pinned to the floor of its canvas, so
+        // the floor is the ground; across it he is anchored on the sitting
+        // rabbit rather than on the canvas, which is stretched by the poses that
+        // reach down into the grass.
+        rabbit.anchorPoint = CGPoint(x: IntroArt.grazeSitCentreXFraction, y: 0)
         rabbit.position = CGPoint(x: Intro.rabbitStartX, y: Layout.dogGroundLine)
         stage.addChild(rabbit)
         introRabbit = rabbit
@@ -1389,9 +1439,16 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             .run { [weak self] in self?.finishIntro() },
         ]))
 
-        // The rabbit has no beats of his own. He is carried in by the turf —
-        // `update` walks him — and he breaks in `handOff`, which is the moment
-        // the leash goes, because those are the same moment.
+        // The rabbit's one beat: he grazes. Started here rather than in
+        // `stageIntro` because the clip is staged behind the title card and a
+        // rabbit chewing away behind it would be the one thing moving.
+        //
+        // Everything else about him is somebody else's beat. He is carried in by
+        // the turf — `update` walks him — and he breaks in `handOff`, which is
+        // the moment the leash goes, because those are the same moment.
+        introRabbit?.run(.repeatForever(
+            .animate(with: IntroArt.grazeFrames, timePerFrame: Intro.grazeFrame)
+        ))
     }
 
     /// Benny fades up on top of the last drawing of himself, still standing on
@@ -1447,6 +1504,13 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // crossed — which is what lets `rabbitRunSpeed` be stated against the
         // speed of the chase.
         if let rabbit = introRabbit {
+            // A different sheet, so the size and the anchor go with the frames:
+            // the gallop is drawn longer and lower than the rabbit sitting up in
+            // the grass, and `grazeSize` and `rabbitSize` are what keep the two
+            // the same animal across the change.
+            rabbit.removeAllActions()
+            rabbit.size = Intro.rabbitSize
+            rabbit.anchorPoint = CGPoint(x: 0.5, y: 0)
             rabbit.run(.repeatForever(.animate(with: IntroArt.rabbitFrames, timePerFrame: 0.07)))
             let bolt = SKAction.moveBy(
                 x: Intro.rabbitRunSpeed * CGFloat(Intro.rabbitBolt), y: 0,

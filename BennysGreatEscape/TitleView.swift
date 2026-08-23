@@ -150,33 +150,6 @@ private enum Art {
     static let best = Rect(x0: 0.075, y0: 0.300, x1: 0.470, y1: 0.345)
 }
 
-/// Lays a button-shaped shadow over the painted button while a finger is down.
-///
-/// The shadow is an *overlay* rather than the button's label, and the label
-/// stays a plain `Color.clear`. That keeps the hit-testing path identical to a
-/// button with no press state at all — a label held at zero opacity is the kind
-/// of thing that can quietly stop taking taps.
-private struct PressTint: ButtonStyle {
-    let shadow: CGSize
-    let cornerRadius: CGFloat
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(GameStyle.pressShadow)
-                    .frame(width: shadow.width, height: shadow.height)
-                    .opacity(configuration.isPressed ? 1 : 0)
-                    .allowsHitTesting(false)
-            }
-            // Instant down, gentle up. A press has to register the moment the
-            // finger lands; fading *in* would make the button feel slow, while
-            // snapping back out looks like a glitch rather than a release.
-            .animation(configuration.isPressed ? nil : .easeOut(duration: 0.22),
-                       value: configuration.isPressed)
-    }
-}
-
 #Preview {
     TitleView(bestScore: 17, onStart: {})
 }

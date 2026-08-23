@@ -69,6 +69,11 @@ private struct Key {
     /// (~176) that his colour never needs to be consulted.
     static let rabbit = Key(background: 242, drawing: 205, maxSaturation: 255)
 
+    /// Plain white paper, no shadows and no checkerboard. Same rabbit, so the
+    /// same wide berth over his coat — and the grass he is eating is green
+    /// enough that saturation never has to be brought into it either.
+    static let graze = Key(background: 240, drawing: 200, maxSaturation: 255)
+
     /// The rabbit sheet has its frame number stamped in the corner of every
     /// cell. Painted out before keying, or each frame ships with a numeral
     /// floating beside the rabbit.
@@ -424,6 +429,30 @@ private func figures(in sheet: Bitmap) -> (labels: [Int], figures: [Figure]) {
     return (labels, found)
 }
 
+/// Groups a sheet's figures into poses by the blank columns between them.
+///
+/// Only usable on a sheet whose gutters are clean — the walk's are not, which is
+/// why it is cut by which man each drawing belongs to instead. The graze sheet's
+/// six poses are drawn well clear of each other, so there the gaps are the cuts.
+///
+/// A pose is a group and not a single figure because the grass is drawn
+/// unattached to the rabbit in the poses where his nose has not reached it yet.
+private func clusters(of all: [Figure]) -> [[Figure]] {
+    let drawn = all
+        .filter { $0.box.width >= Find.speck && $0.box.height >= Find.speck }
+        .sorted { $0.box.left < $1.box.left }
+
+    var found: [[Figure]] = []
+    for figure in drawn {
+        if let last = found.last, figure.box.left < last.map(\.box.right).max()! {
+            found[found.count - 1].append(figure)
+        } else {
+            found.append([figure])
+        }
+    }
+    return found
+}
+
 /// The rows the sheet's drawing occupies, found from the blank gutters around
 /// it. The walk sheet is a single row and so gives back a single band; the
 /// gutters are clean either way, which the columns are not.
@@ -515,7 +544,7 @@ private func anchor(of scene: Scene, in sheet: Bitmap, labels: [Int]) -> (x: Int
 /// Only the labelled pixels are copied, never a rectangle, so a neighbouring
 /// pair overlapping this frame's bounding box can't come with it.
 private func compose(
-    _ scene: Scene, figures: [Figure], anchor: (x: Int, y: Int),
+    _ figures: [Figure], anchor: (x: Int, y: Int),
     canvas: Box, sheet: Bitmap, labels: [Int]
 ) -> Bitmap {
     var frame = Bitmap(width: canvas.width, height: canvas.height)
@@ -640,7 +669,7 @@ private let walkLeft = kept[0...handoff].enumerated().map { index, figures in
 private var walkFrames: [Bitmap] = []
 for (index, scene) in walkScenes.enumerated() {
     let frame = compose(
-        scene, figures: kept[index], anchor: walkAnchors[index],
+        kept[index], anchor: walkAnchors[index],
         canvas: walkCanvas, sheet: walkSheet, labels: walkLabels
     )
     install(frame, named: "intro_walk_\(index)")
@@ -713,6 +742,52 @@ for (index, cell) in rabbitCells.enumerated() {
     install(frame, named: "intro_rabbit_\(index)")
 }
 
+// MARK: - The graze sheet
+
+/// The pose the clip opens on and comes back to: sitting up with his head clear
+/// of the grass. `IntroArt.grazeStill` picks the same frame, and the fractions
+/// printed for it are what size him against the running rabbit.
+private let sittingUp = 0
+
+print("\ngraze sheet")
+
+private var grazeSheet = load("Art/intro_graze_sheet.png")
+key(&grazeSheet, .graze)
+private let (grazeLabels, grazeFigures) = figures(in: grazeSheet)
+private let grazePoses = clusters(of: grazeFigures)
+print("  \(grazePoses.count) poses")
+guard grazePoses.count == 6 else { fatalError("expected 6 poses, found \(grazePoses.count)") }
+
+private let grazeBoxes = grazePoses.map { pose in
+    pose.dropFirst().reduce(pose[0].box) { $0.union($1.box) }
+}
+
+/// Pinned by his rump on the ground: the left of the drawing, and the bottom of
+/// it. He is eating, not travelling — the head goes down and forward while the
+/// back end stays put — so the back end is what has to hold still between
+/// frames. Pinned anywhere else and the whole rabbit slides about under a head
+/// that is trying to reach the same tuft of grass twice.
+private let grazeAnchors = grazeBoxes.map { (x: $0.left, y: $0.bottom) }
+
+private var grazeCanvas = Box.empty
+for (index, box) in grazeBoxes.enumerated() {
+    let anchor = grazeAnchors[index]
+    grazeCanvas = grazeCanvas.union(Box(
+        left: box.left - anchor.x, top: box.top - anchor.y,
+        right: box.right - anchor.x, bottom: box.bottom - anchor.y
+    ))
+}
+print("  canvas \(grazeCanvas.width)x\(grazeCanvas.height)")
+
+for (index, pose) in grazePoses.enumerated() {
+    let frame = compose(
+        pose, anchor: grazeAnchors[index],
+        canvas: grazeCanvas, sheet: grazeSheet, labels: grazeLabels
+    )
+    install(frame, named: "intro_graze_\(index)")
+    print("  pose \(index): \(pose.count) figure(s), \(grazeBoxes[index].width)x\(grazeBoxes[index].height)")
+}
+
 // MARK: - The numbers GameScene needs
 
 // Everything below is measured off the artwork rather than guessed, and printed
@@ -738,4 +813,8 @@ paste into IntroArt:
     static let rabbitAspect: CGFloat = \(ratio(rabbitCanvas.width, of: rabbitCanvas.height))
     static let rabbitStillWidthFraction: CGFloat = \(ratio(rabbitBoxes[still].width, of: rabbitCanvas.width))
     static let rabbitGroundLineFraction: CGFloat = \(ratio(rabbitCanvas.height - plantedRabbit, of: rabbitCanvas.height))
+    static let rabbitStillHeightFraction: CGFloat = \(ratio(rabbitBoxes[still].height, of: rabbitCanvas.height))
+    static let grazeAspect: CGFloat = \(ratio(grazeCanvas.width, of: grazeCanvas.height))
+    static let grazeSitHeightFraction: CGFloat = \(ratio(grazeBoxes[sittingUp].height, of: grazeCanvas.height))
+    static let grazeSitCentreXFraction: CGFloat = \(ratio(grazeBoxes[sittingUp].centreX - grazeAnchors[sittingUp].x - grazeCanvas.left, of: grazeCanvas.width))
 """)

@@ -36,11 +36,25 @@ struct AboutView: View {
             }
             .ignoresSafeArea(edges: .top)
 
-            CircleBackButton { dismiss() }
-                .padding(.leading, 16)
-                .padding(.top, 8)
+            // Placed against the top of the artwork rather than the safe
+            // area, so it lands in the strip of sky and foliage above the
+            // logo — high enough to clear BENNY'S, low enough to clear the
+            // Dynamic Island, and never over Benny himself.
+            GeometryReader { proxy in
+                SignBackButton { dismiss() }
+                    .padding(.leading, 10)
+                    .padding(.top, proxy.size.width * headerAspect * 0.07)
+            }
+            .ignoresSafeArea(edges: .top)
         }
+        // As everywhere else in the game. A full screen cover doesn't inherit
+        // it, and the clock lands squarely on the sign.
+        .statusBarHidden()
     }
+
+    /// `about_header` is 853 x 580, and it's drawn full width, so this turns
+    /// the screen's width into the header's height.
+    private let headerAspect: CGFloat = 580 / 853
 
     private var panel: some View {
         VStack(spacing: 0) {

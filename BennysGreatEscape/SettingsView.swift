@@ -26,7 +26,8 @@ struct SettingsView: View {
             let size = proxy.size
             let row = Art.soundRow.frame(in: size)
             let knob = Art.toggle.frame(in: size)
-            let back = Art.back.frame(in: size)
+            let back = Art.back.tap.frame(in: size)
+            let backPaint = Art.back.paint.frame(in: size)
 
             ZStack(alignment: .topLeading) {
                 Image("settings_art")
@@ -57,11 +58,13 @@ struct SettingsView: View {
                     .allowsHitTesting(false)
 
                 // BACK is painted into the illustration, so this only has to
-                // take the tap — nothing is drawn over it.
+                // take the tap and darken the plate while a finger is down —
+                // the same answer the title screen's painted buttons give.
                 Button { dismiss() } label: {
                     Color.clear.contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressTint(shadow: backPaint.size,
+                                       cornerRadius: backPaint.height * Art.back.cornerRadius))
                 .frame(width: back.width, height: back.height)
                 .position(x: back.midX, y: back.midY)
                 .accessibilityLabel("Back")
@@ -190,7 +193,18 @@ private enum Art {
     /// The whole painted row — icon, title, detail and switch.
     static let soundRow = Rect(x0: 0.110, y0: 0.459, x1: 0.900, y1: 0.564)
 
-    /// The painted BACK plate. Only a target; the drawing is in the artwork.
+    /// A painted button: where it can be tapped, where it actually is, and how
+    /// round its corners are as a fraction of its height. `paint` is the
+    /// plate's *outer* edge — the dark outline included — so the press tint
+    /// covers it rather than leaving a bright ring around a held button.
+    struct Button {
+        let tap: Rect
+        let paint: Rect
+        let cornerRadius: CGFloat
+    }
+
+    /// The painted BACK plate. The drawing is in the artwork; only the tap and
+    /// the press tint are live.
     ///
     /// The shipped PNG is not the supplied original. Two edits: the BACK plate
     /// was lifted and moved 120px down the card (it sat tight under the divider
@@ -198,7 +212,11 @@ private enum Art {
     /// 48px down so the paw and title clear the Dynamic Island — done by
     /// stretching the 76px of sky above the logo rather than scaling the logo.
     /// Re-measure everything here if the illustration is ever replaced.
-    static let back = Rect(x0: 0.300, y0: 0.681, x1: 0.700, y1: 0.760)
+    static let back = Button(
+        tap: Rect(x0: 0.290, y0: 0.673, x1: 0.710, y1: 0.762),
+        paint: Rect(x0: 0.301, y0: 0.683, x1: 0.699, y1: 0.754),
+        cornerRadius: 0.36
+    )
 }
 
 #Preview {
