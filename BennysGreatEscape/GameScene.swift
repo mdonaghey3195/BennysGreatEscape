@@ -683,6 +683,14 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// than a still, and it costs nothing since the scene is already built.
     private var hasStarted = false
 
+    /// Whether Benny has left the ground since the last time he was on it.
+    ///
+    /// The one thing that separates a landing from the ground contact the
+    /// physics reports when the world is first built, or rebuilt on a retry.
+    /// Both of those raise `didBegin` with his paws already down, and neither
+    /// should thud.
+    private var hasLeftGround = false
+
     /// The opening clip, between the title screen and the first obstacle. It
     /// runs inside the scene rather than over it, so the park it is played in is
     /// the same park the game is played in and the handoff at the end is a cut
@@ -737,8 +745,17 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// Driven by ground contacts rather than inferred from velocity. Velocity
     /// passes through zero at the apex of every jump, so testing `vy ≈ 0` would
     /// let you jump again in mid-air.
-    private var groundContacts = 0
-    private var isOnGround: Bool { groundContacts > 0 }
+    ///
+    /// A flag and not a tally, which it used to be. There is one ground body —
+    /// a single edge across the world, see `makeGround` — so there is only ever
+    /// one contact to be in, and a count of it can only ever be 0 or 1. What
+    /// counting did buy was drift: every place that had to *correct* the tally
+    /// after a body swap had to know exactly how many contacts were in flight,
+    /// and two of them guessed one too few. Both left him permanently airborne
+    /// in the game's eyes and handed out free jumps for the rest of the run.
+    ///
+    /// A flag can't drift. Setting it true twice is setting it true.
+    private var isOnGround = false
 
     private var obstacleTimer: TimeInterval = 0
     private var obstacleInterval: TimeInterval = 1.8
@@ -1106,6 +1123,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func slide() {
         guard isOnGround, !isSliding, !DogArt.slideFrames.isEmpty else { return }
         isSliding = true
+        Sfx.shared.play(.slide)
+        Haptics.slide()
 
         setDucked(true)
 
@@ -1156,14 +1175,17 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     /// Swaps the hitbox between standing and ducked.
     ///
-    /// The old body's `didEnd` never arrives, so the ground contact count would
-    /// creep up with every slide — and once it's above one, the count never
-    /// reaches zero in mid-air and `isOnGround` stays true, handing out free
-    /// double jumps. Since a swap only ever happens with his feet down, pinning
-    /// the count back to exactly one is both safe and correct.
+    /// Nothing is done about `isOnGround` here, deliberately. Swapping a hitbox
+    /// doesn't change whether Benny is standing on the ground, and the state
+    /// says whether he is standing on the ground.
+    ///
+    /// It used to pin the old ground-contact tally back to 1 to make up for the
+    /// destroyed body never reporting its contact ended — which was one too
+    /// many, because the replacement body then announced itself with a `didBegin`
+    /// of its own. That is the whole of what made a slide hand out free jumps
+    /// for the rest of a run.
     private func setDucked(_ ducked: Bool) {
         dog.physicsBody = makeDogPhysics(ducked: ducked)
-        groundContacts = 1
     }
 
     private func jump() {
@@ -1171,6 +1193,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // otherwise leave the ducked hitbox on while he's clearly upright.
         if isSliding { endSlide() }
         guard isOnGround else { return }
+        hasLeftGround = true
+        Sfx.shared.play(.jump)
         // Velocity is set directly from the desired apex rather than applying an
         // impulse, which would depend on the body's mass — and therefore on the
         // dog's size, which is placeholder art due to change.
@@ -1479,6 +1503,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// The drawing stops drawing the dog, and the dog `bennyAppears` left
     /// standing in its place goes.
     private func handOff() {
+        // The real dog, once a run, on the beat the whole clip exists to reach.
+        // Not on jumps: a bark on every jump is the fastest way to wear out the
+        // best sound in the game.
+        Sfx.shared.bark()
+
         // The camera goes with Benny: the turf starts moving, the hills pick up,
         // and the man — pinned to the turf by `update` — is carried backwards
         // out of frame.
@@ -1557,8 +1586,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         dog.physicsBody?.velocity = .zero
         dog.physicsBody?.isDynamic = true
         // Put back on the ground rather than dropped onto it, so the first jump
-        // doesn't have to wait for a landing contact to arrive.
-        groundContacts = 1
+        // doesn't have to wait for a landing contact to arrive. The contact then
+        // arrives anyway and says the same thing, which is exactly why this is a
+        // flag: as a tally, this line and that contact came to two, and two
+        // never counted back down to nothing.
+        isOnGround = true
 
         hasStarted = true
         onIntroFinished?()
@@ -1663,7 +1695,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let categories = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if categories == (PhysicsCategory.dog | PhysicsCategory.ground) {
-            groundContacts += 1
+            isOnGround = true
             // Not while sliding. Swapping in the ducked body makes the ground
             // report a fresh contact, and landing back into a gallop here would
             // wipe the slide a frame or two after it started — which is exactly
@@ -1671,6 +1703,14 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             if !isGameOver, !isSliding {
                 squash(xScale: 1.2, yScale: 0.8)
                 puffDust()
+                // Only if he was actually in the air. A contact also arrives the
+                // moment the world is built and again on every retry, with him
+                // standing still on the ground both times.
+                if hasLeftGround {
+                    hasLeftGround = false
+                    Sfx.shared.play(.land)
+                    Haptics.land()
+                }
                 // Back to running. The jump arc is a one-shot, so without this
                 // he'd hold the landing pose and skate along in it.
                 if let body = dog.childNode(withName: "body"), DogArt.frames.count > 1 {
@@ -1687,12 +1727,28 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     func didEnd(_ contact: SKPhysicsContact) {
         let categories = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
-        if categories == (PhysicsCategory.dog | PhysicsCategory.ground) {
-            groundContacts = max(0, groundContacts - 1)
-        }
+        guard categories == (PhysicsCategory.dog | PhysicsCategory.ground) else { return }
+
+        // Only from the body he currently has. Swapping his hitbox destroys the
+        // old one, and everything here says a destroyed body never reports its
+        // contact ended — but if one ever did, and arrived after its
+        // replacement had already reported the same contact beginning, this
+        // would read as him leaving ground he is plainly standing on, and he
+        // would never jump again.
+        guard contact.bodyA === dog.physicsBody || contact.bodyB === dog.physicsBody else { return }
+
+        isOnGround = false
     }
 
     // MARK: - Game over / restart
+
+    /// How long the frozen scene is left alone before the message arrives.
+    ///
+    /// The freeze was always there; what was missing was any time to read it.
+    /// The label used to appear on the same frame as the impact, which reads as
+    /// a cut rather than as a stop — the run doesn't end, it is simply replaced
+    /// by a label. Three or four frames of nothing is all it takes.
+    private static let crashHold: TimeInterval = 0.09
 
     private func endGame() {
         guard !isGameOver else { return }
@@ -1702,6 +1758,14 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // Otherwise he keeps galloping on the spot in the frozen scene.
         dog.childNode(withName: "body")?.isPaused = true
         enumerateChildNodes(withName: "obstacle") { node, _ in node.removeAllActions() }
+
+        Sfx.shared.play(.crash)
+        Haptics.crash()
+        // Harder than a landing, and the last thing he does. Actions still run
+        // in a scene whose *physics* is stopped, which is what lets the impact
+        // play out over a world that has already frozen.
+        squash(xScale: 1.35, yScale: 0.68)
+        flash()
 
         messageLabel = SKLabelNode(fontNamed: "AvenirNextCondensed-Heavy")
         messageLabel.text = "Good boy! Tap to retry"
@@ -1713,9 +1777,33 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         messageLabel.zPosition = 50
         messageLabel.setScale(0)
         addChild(messageLabel)
-        messageLabel.run(.scale(to: 1, duration: 0.25))
+        messageLabel.run(.sequence([
+            .wait(forDuration: Self.crashHold),
+            .scale(to: 1, duration: 0.25),
+        ]))
 
         onGameOver?(score)
+    }
+
+    /// A frame or two of white over the whole scene.
+    ///
+    /// Kept faint and kept short. The artwork is already bright, and a flash
+    /// that actually whites it out reads as a rendering fault rather than as an
+    /// impact — this is only here to put a hard edge on the frame Benny stops.
+    ///
+    /// Under the message rather than over it, so it is finished with by the time
+    /// there is anything to read.
+    private func flash() {
+        let sheet = SKSpriteNode(color: .white, size: Layout.sceneSize)
+        sheet.position = CGPoint(x: Layout.sceneSize.width / 2, y: Layout.sceneSize.height / 2)
+        sheet.zPosition = 45
+        sheet.alpha = 0
+        addChild(sheet)
+        sheet.run(.sequence([
+            .fadeAlpha(to: 0.3, duration: 0.03),
+            .fadeOut(withDuration: 0.12),
+            .removeFromParent(),
+        ]))
     }
 
     /// Rolls the opening clip, and then begins play.
@@ -1748,9 +1836,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         score = 0
         isGameOver = false
         isSliding = false
+        hasLeftGround = false
         touchOrigin = nil
         gestureResolved = false
-        groundContacts = 0
+        isOnGround = false
         obstacleTimer = 0
         obstacleInterval = 1.8
         gameSpeed = Layout.openingSpeed

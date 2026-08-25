@@ -76,6 +76,14 @@ struct GameView: View {
         .statusBarHidden()
         .onAppear {
             Music.shared.isEnabled = musicOn
+            // The same switch. The settings row says "Turn game sounds on or
+            // off", and the effects are game sounds.
+            Sfx.shared.isEnabled = musicOn
+            // Both loaded up front: an effect that decodes its file on the frame
+            // it first plays, and a haptic generator that spins the engine up on
+            // the frame it first fires, are both a miss.
+            Sfx.shared.prepare()
+            Haptics.prepare()
             scene.onScoreChange = { score = $0 }
             scene.onGameOver = {
                 bestScore = max(bestScore, $0)

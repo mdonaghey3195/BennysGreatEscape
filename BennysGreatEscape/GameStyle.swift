@@ -65,6 +65,22 @@ struct SpringyButton: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.9 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+            .hapticOnPress(configuration.isPressed)
+    }
+}
+
+private extension View {
+    /// A tick as the finger lands, not as it lifts.
+    ///
+    /// Fired from the button styles rather than from the buttons, so every
+    /// painted button in the app gets it without being told — the title
+    /// screen's three, and both ways back out. `onChange` rather than a plain
+    /// call in `makeBody`, because a style's body is evaluated whenever SwiftUI
+    /// feels like it and a haptic fired from one would go off at random.
+    func hapticOnPress(_ isPressed: Bool) -> some View {
+        onChange(of: isPressed) { _, pressed in
+            if pressed { Haptics.press() }
+        }
     }
 }
 
@@ -96,6 +112,7 @@ struct PressTint: ButtonStyle {
             // snapping back out looks like a glitch rather than a release.
             .animation(configuration.isPressed ? nil : .easeOut(duration: 0.22),
                        value: configuration.isPressed)
+            .hapticOnPress(configuration.isPressed)
     }
 }
 

@@ -79,6 +79,7 @@ struct SettingsView: View {
         // however the value came to change.
         .onChange(of: musicOn) { _, isOn in
             Music.shared.isEnabled = isOn
+            Sfx.shared.isEnabled = isOn
         }
     }
 }
