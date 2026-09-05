@@ -34,6 +34,10 @@ struct HintCard: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
+        // 0.35 is enough. The card is bottom-aligned, which puts it below the
+        // ground line and over the dark field rather than the sky — white on
+        // this measures 8.51:1 there, and going darker only makes a passing
+        // hint read as a modal.
         .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 18))
         .padding(.horizontal, 28)
         .shadow(color: .black.opacity(0.25), radius: 8, y: 3)

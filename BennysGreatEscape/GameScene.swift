@@ -7,7 +7,8 @@
 //  The world is drawn entirely in code — gradient sky, parallax clouds and
 //  hills, scrolling turf. Everything you actually play against is painted and
 //  lives in the asset catalogue: Benny himself (a gallop, a jump arc and a
-//  slide), the three things he jumps, and the bench he ducks under.
+//  slide), the three things he jumps, and the bench and swingset he ducks
+//  under.
 //
 
 import SpriteKit
@@ -36,10 +37,31 @@ private enum PhysicsCategory {
 private enum Layout {
     static let sceneSize = CGSize(width: 400, height: 800)
 
-    /// What `.aspectFill` crops off each side on the tallest phone, leaving
-    /// 16…384 of the 400 authored. The worst case of the shapes this is held
-    /// in, and so the edge the opening clip is framed against.
-    static let visibleInset: CGFloat = 16
+    /// What `.aspectFill` crops off each side on a 19.5:9 phone, leaving
+    /// 17…383 of the 400 authored — and so the edge the opening clip is framed
+    /// against.
+    ///
+    /// Every iPhone this ships to is that shape bar one, and they crop between
+    /// 15.1 and 16.02 units. The binding one is 402x874 — the 16 Pro, 17 and
+    /// 17 Pro — which is worth naming because it is neither the tallest phone
+    /// nor the widest, and this used to say "the tallest" and be 16.
+    ///
+    /// The exception is `widestVisible`, below, and it is the more dangerous of
+    /// the two.
+    static let visibleInset: CGFloat = 17
+
+    /// The widest the scene can ever be shown: all of it.
+    ///
+    /// Everything above assumes a slice gets cropped off each side, and on the
+    /// SE — the one 16:9 phone still taking iOS 17 — none of it does. That
+    /// screen is squarer than the scene, so `.aspectFill` takes its crop off the
+    /// top and bottom instead and the full authored width is on show.
+    ///
+    /// Which makes this the number anything hidden off-stage has to clear.
+    /// Framing against `visibleInset` is right for things meant to sit *at* the
+    /// edge, and wrong for things meant to be past it: 384 is where a tall
+    /// phone stops, but the SE keeps going to 400.
+    static let widestVisible: CGFloat = sceneSize.width
 
     /// Where the dog and every obstacle stand. Set high enough that the action
     /// occupies the lower third rather than a thin strip under empty sky.
@@ -500,10 +522,111 @@ private enum Intro {
     static let hold: TimeInterval = 0.55
 }
 
+/// The painted world Benny runs through, and the handful of numbers it is
+/// staged by.
+///
+/// One image, cut from a much longer painting by `Art/CropBackground.swift`.
+/// The fractions below are what that script prints — measured off the crop
+/// rather than typed in, so a repainted background is a rerun and a paste.
+private enum BackdropArt {
+    /// Probed rather than named directly, for the reason `ObstacleArt.load`
+    /// gives: `SKTexture(imageNamed:)` hands back a placeholder for a missing
+    /// name instead of admitting the art has gone.
+    static let sheet: SKTexture? = UIImage(named: "bg_scroll").map(SKTexture.init(image:))
+
+    /// The crop is exactly one repeat of the painting, so laying two of them end
+    /// to end joins with nothing to see. Both the length of that repeat and
+    /// where to take it from were found by sliding the source over itself —
+    /// see the script, which prints how much better the join it chose is than
+    /// the worst one available.
+    static let aspect: CGFloat = 0.9254
+
+    /// Down from the top of the crop: the near and far edges of the grass, and
+    /// the band of flat sky the two scrolling layers are cut at.
+    static let grassLineFraction: CGFloat = 0.7248
+    static let earthLineFraction: CGFloat = 0.7897
+    static let skySplitFraction: CGFloat = 0.5892
+
+    /// How far down the grass everything stands. Nought is its near edge, one
+    /// the lip of the cut earth.
+    ///
+    /// Half way, so there is field behind them and field in front — which is
+    /// what standing in a field looks like. On the near edge, where this
+    /// started, the bush line sits at Benny's heels and the whole flowered
+    /// strip lies in front of him untouched, and he reads as pressed against a
+    /// hedge rather than running through a park.
+    static let standFraction: CGFloat = 0.5
+
+    /// The row of the painting the game is played on, and so the row that has
+    /// to land on `Layout.groundTop`.
+    ///
+    /// Everything in the world is staged against that line and nothing against
+    /// the artwork, so this is the only place the two meet: move it and Benny,
+    /// the obstacles and the whole opening cast move together, while the
+    /// physics, the jump and the bench's clearance never know anything
+    /// happened.
+    static var anchorFraction: CGFloat {
+        grassLineFraction + standFraction * (earthLineFraction - grassLineFraction)
+    }
+
+    /// How tall the whole crop is drawn, in scene points.
+    ///
+    /// Not picked — the larger of the two heights it has to reach. Above the
+    /// line they stand on the painting has to fill the scene to its top, and
+    /// below it, down to the bottom; whichever asks for more decides, and the
+    /// other is covered with room to spare. Here it is the ground that asks:
+    /// the painting carries far more sky than field, so the sky it doesn't need
+    /// runs off the top of the scene and is never seen.
+    ///
+    /// Which is why standing them further down the grass makes the whole
+    /// painting bigger — there is less of it left below them to reach the
+    /// bottom of the scene with.
+    static var height: CGFloat {
+        max((Layout.sceneSize.height - Layout.groundTop) / anchorFraction,
+            Layout.groundTop / (1 - anchorFraction))
+    }
+
+    /// One repeat, in scene points — and so how far the world travels before it
+    /// comes round again.
+    static var tileWidth: CGFloat { height * aspect }
+
+    /// The bottom of the painting, and the seam between its two layers, in
+    /// scene coordinates. Both fall out of standing the grass line on
+    /// `Layout.groundTop`, which is the whole of how this is positioned: the
+    /// painted turf lands where the code used to draw its own, so nothing
+    /// physical moves.
+    static var bottomY: CGFloat { Layout.groundTop - height * (1 - anchorFraction) }
+    static var splitY: CGFloat { bottomY + height * (1 - skySplitFraction) }
+
+    /// Everything above the split, and everything below it. Two rectangles of
+    /// one texture rather than two images: the split is a measurement, and a
+    /// measurement is better kept as a number than baked into a second file.
+    ///
+    /// Texture coordinates count up from the bottom where the crop's fractions
+    /// count down from the top, hence the inversion.
+    static var sky: SKTexture? {
+        sheet.map { SKTexture(rect: CGRect(x: 0, y: 1 - skySplitFraction, width: 1, height: skySplitFraction), in: $0) }
+    }
+
+    static var land: SKTexture? {
+        sheet.map { SKTexture(rect: CGRect(x: 0, y: 0, width: 1, height: 1 - skySplitFraction), in: $0) }
+    }
+
+    static var skySize: CGSize { CGSize(width: tileWidth, height: height * skySplitFraction) }
+    static var landSize: CGSize { CGSize(width: tileWidth, height: height * (1 - skySplitFraction)) }
+
+    /// How fast the sky drifts. Its own speed, and a slow one: the land travels
+    /// at whatever the world is doing, and clouds keeping pace with the grass
+    /// under Benny's feet is exactly the flat painted wall that having two
+    /// layers is for.
+    static let skySpeed: CGFloat = 16
+}
+
 // MARK: - The obstacle artwork
 
 /// Everything Benny meets on the path, painted and dropped into the catalogue:
-/// a fallen log, a bush and a tree stump to jump, and a park bench to duck.
+/// a fallen log, a bush and a tree stump to jump, and a park bench and a
+/// swingset to duck.
 private enum ObstacleArt {
 
     /// The shape a drawing's solid mass is modelled with.
@@ -522,6 +645,40 @@ private enum ObstacleArt {
         /// height rather than width, because height is what `heightRange` sets
         /// and width merely follows the drawing's aspect.
         case disc(radius: CGFloat, centre: CGFloat)
+    }
+
+    /// Something hung off a drawing that moves on its own: the swingset's two
+    /// swings, cut out of its frame by `Art/CutSwingset.swift` so that they can
+    /// rock on the bar while the A-frame stands still.
+    ///
+    /// Stated in fractions of the drawing it hangs on, like everything else
+    /// here, so a re-cut drawing carries its swings with it.
+    struct Hang {
+        let texture: SKTexture?
+
+        /// The hanger, as a fraction of the drawing's width from its centre and
+        /// of its height from its top. The sprite is pinned to the bar by its
+        /// own top edge, which is where the cut was made.
+        let pivotXFraction: CGFloat
+        let pivotYFraction: CGFloat
+
+        /// Width as a fraction of the drawing's; the height follows the swing's
+        /// own aspect, so a swing is never stretched against its frame.
+        let widthFraction: CGFloat
+
+        /// How far into its first swing this one starts, 0 to 1. Two swings
+        /// rocking in step read as one object with a hinge in it.
+        let swayPhase: CGFloat
+
+        /// How far a swing rocks, and how long it takes.
+        ///
+        /// Small, and not for the look of it: the physics box is measured with
+        /// the seats at rest, so this is the amount they are allowed to disagree
+        /// with it by. At six degrees a seat moves five points sideways and
+        /// *rises* a quarter of one — and rising is the safe direction, since it
+        /// can only ever open the gap Benny slides through, never close it.
+        static let swayAngle: CGFloat = 6 * .pi / 180
+        static let swayPeriod: TimeInterval = 2.2
     }
 
     /// One kind of obstacle: its drawing, how big it is allowed to be, and
@@ -562,6 +719,10 @@ private enum ObstacleArt {
         /// feet are the bottom of the drawing rather than a skirt of grass, and
         /// because its height is derived from this — see `benchHeight`.
         var sink: CGFloat = Layout.obstacleSink
+
+        /// Anything hung off the drawing. Empty for everything that is one
+        /// picture standing still, which is everything but the swingset.
+        var hangs: [Hang] = []
 
         /// The 2:1 fallback only matters if the art is missing, in which case
         /// the drawn block stands in for it.
@@ -604,8 +765,8 @@ private enum ObstacleArt {
         solid: .box(width: 0.64, height: 0.94, base: 0.02), offsetXFraction: 0
     )
 
-    /// The jump rotation. The bench is deliberately not in here — it's the
-    /// obstacle you duck, and `spawnObstacle` reaches for it by name.
+    /// The jump rotation. The two you duck are deliberately not in here — they
+    /// have a rotation of their own, in `ducks`.
     static let jumps = [log, bush, stump]
 
     /// Fraction of the bench drawing that is open air under the seat. High,
@@ -640,6 +801,61 @@ private enum ObstacleArt {
         offsetXFraction: 0, sink: benchSink
     )
 
+    /// Fraction of the swingset drawing that is open air under the seats, and
+    /// the numbers that place the swings on the bar. All four are measured by
+    /// `Art/CutSwingset.swift` and printed by it — the script is also what
+    /// decides them, since it shortens the chains until the frame comes out at
+    /// a size the scene has room for. Recut the art and it prints these again.
+    private static let swingsetUnderbar: CGFloat = 0.464
+    private static let swingsetPivotY: CGFloat = 0.101
+    private static let swingsetSwingWidth: CGFloat = 0.146
+    private static let swingsetHangers: [CGFloat] = [-0.250, 0.240]
+
+    /// The bench's reasoning, and for the same reason: the foot plates are
+    /// bolted metal rather than a skirt of grass, so they meet the turf instead
+    /// of growing out of it, and every point of sink here would otherwise make
+    /// the whole swingset taller and wider.
+    private static let swingsetSink: CGFloat = 6
+
+    /// Sized so the underside of the seats lands on the clearance line, exactly
+    /// as `benchHeight` is. Comes out at 110pt tall and 247 wide — half again
+    /// the bench's height, which is what makes the two read as different things
+    /// to duck rather than the same thing twice.
+    private static let swingsetHeight =
+        (Layout.duckClearance + swingsetSink - Layout.dogPlantDepth) / swingsetUnderbar
+
+    private static let swingsetSwing = load("obstacle_swingset_swing")
+
+    /// The other one you slide under, and the one that all but insists on it:
+    /// its box runs to the top of the drawing rather than stopping at a seat
+    /// low enough to hurdle, as the bench's does. A jump spends 180pt above
+    /// 110 at the opening speed and 283 at the top one, against the 273 the box
+    /// and Benny need together — so hurdling this is impossible for most of a
+    /// run and a ten-point window at the end of one.
+    ///
+    /// The box spans both seats and the air between them, because a piece gets
+    /// one physics body and two would be a lie anyway — the gap passes in a
+    /// fifth of a second at full tilt, and a slide covers the lot. Its width is
+    /// the seats and their hooks, pulled in a little in Benny's favour; the
+    /// legs, like the bench's, carry no physics and are simply run through.
+    static let swingset = Piece(
+        texture: load("obstacle_swingset_frame"), heightRange: swingsetHeight...swingsetHeight,
+        solid: .box(width: 0.60, height: 1 - swingsetUnderbar, base: swingsetUnderbar),
+        offsetXFraction: 0, sink: swingsetSink,
+        hangs: swingsetHangers.enumerated().map { index, hanger in
+            Hang(
+                texture: swingsetSwing, pivotXFraction: hanger,
+                pivotYFraction: swingsetPivotY, widthFraction: swingsetSwingWidth,
+                swayPhase: index == 0 ? 0 : 0.45
+            )
+        }
+    )
+
+    /// The duck rotation, held apart from `jumps` because the two verbs are
+    /// weighted against each other in `spawnObstacle` rather than drawn from
+    /// one bag.
+    static let ducks = [bench, swingset]
+
     /// Optional, and probed with `UIImage(named:)` for the same reason `DogArt`
     /// does it: `SKTexture(imageNamed:)` hands back a placeholder for a name
     /// that isn't there, so it can't tell you the art has gone missing. A nil
@@ -649,18 +865,17 @@ private enum ObstacleArt {
     }
 }
 
+/// What is still drawn rather than painted. The sky, the hills and the turf
+/// used to be here too, and are in `bg_scroll` now.
 private enum Palette {
-    static let skyTop = SKColor(red: 0.35, green: 0.72, blue: 0.97, alpha: 1)
-    static let skyBottom = SKColor(red: 0.76, green: 0.92, blue: 1.00, alpha: 1)
-    static let grass = SKColor(red: 0.44, green: 0.80, blue: 0.36, alpha: 1)
-    static let grassDark = SKColor(red: 0.26, green: 0.60, blue: 0.24, alpha: 1)
-    static let hillNear = SKColor(red: 0.55, green: 0.85, blue: 0.45, alpha: 1)
-    static let hillFar = SKColor(red: 0.68, green: 0.89, blue: 0.62, alpha: 1)
     static let ink = SKColor(red: 0.16, green: 0.20, blue: 0.24, alpha: 1)
-    static let cloud = SKColor(white: 1, alpha: 0.95)
     static let sun = SKColor(red: 1.0, green: 0.87, blue: 0.35, alpha: 1)
     static let log = SKColor(red: 0.60, green: 0.40, blue: 0.24, alpha: 1)
     static let hound = SKColor(red: 0.98, green: 0.96, blue: 0.92, alpha: 1)
+
+    /// Sampled from the bottom of the painting, so anything showing behind it
+    /// is the same field it is.
+    static let field = SKColor(red: 0.40, green: 0.57, blue: 0.18, alpha: 1)
 }
 
 // MARK: - Scene
@@ -671,7 +886,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var dog: SKNode!
     private var messageLabel: SKLabelNode!
     private var scenery: SKNode!
-    private var groundDetail: SKNode!
+    /// The painted land, in strips that wrap round each other as they scroll.
+    /// Distinct from what `makeGround` returns, which is the floor's physics and
+    /// nothing else — one is what you see, the other is what Benny stands on.
+    private var land: SKNode!
 
     // State
     private(set) var score = 0
@@ -786,15 +1004,17 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func build() {
-        addChild(makeSky())
-        addChild(makeSun())
+        // Whatever the painting doesn't reach. `.aspectFill` can only ever crop
+        // the scene, never show past it, so this should be impossible to see —
+        // but if it ever is, a field is a better thing to glimpse than black.
+        backgroundColor = Palette.field
 
         scenery = SKNode()
         addChild(scenery)
-        addParallax()
+        addBackdrop()
+        addChild(makeSun())
 
         addChild(makeGround())
-        addGroundDetail()
         dog = makeDog()
         addChild(dog)
 
@@ -805,50 +1025,54 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         if !hasStarted { stageIntro() }
     }
 
-    /// Tufts scattered over the turf. Without them the ground is an unbroken
-    /// slab of one colour and the dog reads as running on the spot — these are
-    /// the only cue that the world is moving, so they scroll at `gameSpeed`
-    /// rather than a fixed rate and speed up as the game does.
-    private func addGroundDetail() {
-        groundDetail = SKNode()
-        groundDetail.zPosition = 6
-        addChild(groundDetail)
+    // MARK: - Backdrop
 
-        let spacing: CGFloat = 70
-        let count = Int((Layout.sceneSize.width + spacing * 2) / spacing)
-        for i in 0...count {
-            let tuft = makeTuft()
-            tuft.position = CGPoint(
-                x: CGFloat(i) * spacing + CGFloat.random(in: -18...18),
-                y: Layout.groundTop - CGFloat.random(in: 16...54)
-            )
-            groundDetail.addChild(tuft)
+    /// The painted world, in two layers that travel at different speeds.
+    ///
+    /// The split is cut through a row of flat sky, which is what lets them: the
+    /// two edges are the same colour to within three parts in 255, so there is
+    /// nothing at the join to slide against itself and draw a line across the
+    /// sky. Anywhere lower in the picture — through the hills, the bushes, the
+    /// grass — and the cut would show the moment the layers disagreed.
+    ///
+    /// The land is stepped by `update` at exactly the speed of the world, and
+    /// not by an action, because Benny's stride is tied to that speed and turf
+    /// that disagrees with it puts him on a treadmill. The sky is a backdrop and
+    /// has no such obligation, so it drifts on an action inside `scenery` and
+    /// ramps with everything else there.
+    private func addBackdrop() {
+        guard let sky = BackdropArt.sky, let texture = BackdropArt.land else { return }
+
+        for strip in strips(sky, size: BackdropArt.skySize, y: BackdropArt.splitY) {
+            strip.zPosition = -100
+            scenery.addChild(strip)
+            drift(strip, speed: BackdropArt.skySpeed, width: BackdropArt.tileWidth)
+        }
+
+        land = SKNode()
+        land.zPosition = 5  // over the sky, under the obstacles and the dog
+        addChild(land)
+        for strip in strips(texture, size: BackdropArt.landSize, y: BackdropArt.bottomY) {
+            land.addChild(strip)
         }
     }
 
-    private func makeTuft() -> SKNode {
-        let tuft = SKShapeNode(rect: CGRect(x: -9, y: 0, width: 18, height: 5), cornerRadius: 2.5)
-        tuft.fillColor = Palette.grassDark
-        tuft.strokeColor = .clear
-        tuft.alpha = 0.55
-        return tuft
+    /// Two copies of one repeat, laid end to end.
+    ///
+    /// Two is all a seamless scroll needs, given a repeat wider than the screen:
+    /// there is never a moment when a third would be showing.
+    private func strips(_ texture: SKTexture, size: CGSize, y: CGFloat) -> [SKSpriteNode] {
+        (0..<2).map { index in
+            let strip = SKSpriteNode(texture: texture, size: size)
+            strip.anchorPoint = .zero
+            strip.position = CGPoint(x: CGFloat(index) * size.width, y: y)
+            return strip
+        }
     }
 
-    // MARK: - Backdrop
-
-    private func makeSky() -> SKNode {
-        let sky = SKSpriteNode(texture: Self.gradientTexture(
-            from: Palette.skyBottom,
-            to: Palette.skyTop,
-            size: Layout.sceneSize
-        ))
-        sky.position = CGPoint(x: Layout.sceneSize.width / 2, y: Layout.sceneSize.height / 2)
-        sky.zPosition = -100
-        return sky
-    }
-
-    /// Added to the scene rather than to the sky sprite. A sprite's children are
-    /// positioned from its centre, so scene coordinates would land it off-frame.
+    /// Added to the scene rather than to a backdrop sprite. A sprite's children
+    /// are positioned from its centre, so scene coordinates would land it
+    /// off-frame — and it would ride the sky's drift rather than hanging still.
     private func makeSun() -> SKNode {
         let sun = SKShapeNode(circleOfRadius: 42)
         sun.fillColor = Palette.sun
@@ -861,36 +1085,6 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         return sun
     }
 
-    /// Clouds drift slowly and hills faster, so the backdrop reads as depth
-    /// rather than a flat painted wall.
-    private func addParallax() {
-        let width = Layout.sceneSize.width
-
-        for i in 0..<4 {
-            let cloud = makeCloud()
-            cloud.position = CGPoint(x: CGFloat(i) * 150 + 40, y: CGFloat.random(in: 420...700))
-            cloud.zPosition = -80
-            scenery.addChild(cloud)
-            drift(cloud, speed: CGFloat.random(in: 10...18), width: width + 200)
-        }
-
-        for i in 0..<5 {
-            let hill = makeHill(radius: CGFloat.random(in: 80...120), color: Palette.hillFar)
-            hill.position = CGPoint(x: CGFloat(i) * 150 - 40, y: Layout.groundTop - 20)
-            hill.zPosition = -60
-            scenery.addChild(hill)
-            drift(hill, speed: 35, width: width + 350)
-        }
-
-        for i in 0..<4 {
-            let hill = makeHill(radius: CGFloat.random(in: 55...85), color: Palette.hillNear)
-            hill.position = CGPoint(x: CGFloat(i) * 170 + 60, y: Layout.groundTop - 14)
-            hill.zPosition = -40
-            scenery.addChild(hill)
-            drift(hill, speed: 60, width: width + 300)
-        }
-    }
-
     /// Scrolls a node left forever, wrapping it round by `width`.
     private func drift(_ node: SKNode, speed: CGFloat, width: CGFloat) {
         let step = SKAction.moveBy(x: -width, y: 0, duration: TimeInterval(width / speed))
@@ -898,45 +1092,13 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         node.run(.repeatForever(.sequence([step, wrap])))
     }
 
-    private func makeCloud() -> SKNode {
-        let cloud = SKNode()
-        // Three overlapping circles — the classic cartoon cloud.
-        for (dx, dy, r) in [(-24.0, 0.0, 18.0), (0.0, 7.0, 24.0), (24.0, 0.0, 16.0)] {
-            let puff = SKShapeNode(circleOfRadius: r)
-            puff.fillColor = Palette.cloud
-            puff.strokeColor = .clear
-            puff.position = CGPoint(x: dx, y: dy)
-            cloud.addChild(puff)
-        }
-        return cloud
-    }
-
-    private func makeHill(radius: CGFloat, color: SKColor) -> SKShapeNode {
-        let hill = SKShapeNode(circleOfRadius: radius)
-        hill.fillColor = color
-        hill.strokeColor = .clear
-        return hill
-    }
-
+    /// The floor Benny stands on — the box only. What it used to draw as well, a
+    /// green slab with a darker strip along the top, is painted now.
     private func makeGround() -> SKNode {
         let ground = SKNode()
-        ground.zPosition = 5
 
         let left = -Layout.sceneSize.width
         let span = Layout.sceneSize.width * 3
-
-        // Runs far below `groundTop` so `.aspectFill` cropping the bottom of the
-        // scene on a shorter screen can never open a gap under the grass.
-        let slab = SKShapeNode(rect: CGRect(x: left, y: -300, width: span, height: Layout.groundTop + 300))
-        slab.fillColor = Palette.grass
-        slab.strokeColor = .clear
-        ground.addChild(slab)
-
-        // Bold top edge, the cartoon "cut turf" line.
-        let edge = SKShapeNode(rect: CGRect(x: left, y: Layout.groundTop - 8, width: span, height: 8))
-        edge.fillColor = Palette.grassDark
-        edge.strokeColor = .clear
-        ground.addChild(edge)
 
         let body = SKPhysicsBody(
             edgeFrom: CGPoint(x: left, y: Layout.dogGroundLine),
@@ -1265,13 +1427,19 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Obstacles
 
     private func spawnObstacle() {
-        // Benches stay the minority — ducking is the newer verb, and a run
-        // that's mostly ducking loses the rhythm of jumping. They also hold off
-        // until a few obstacles in, so the first thing anyone meets is a jump.
-        let wantsBench = score >= 2 && DogArt.slideFrames.count > 1 && Int.random(in: 0..<10) < 3
+        // Ducks stay the minority — ducking is the newer verb, and a run that's
+        // mostly ducking loses the rhythm of jumping. They also hold off until a
+        // few obstacles in, so the first thing anyone meets is a jump.
+        let wantsDuck = score >= 2 && DogArt.slideFrames.count > 1 && Int.random(in: 0..<10) < 3
         let obstacle: SKNode
-        if wantsBench {
-            obstacle = makeObstacle(ObstacleArt.bench)
+        if wantsDuck {
+            // And the bench is the only one of them for a while yet. The hint
+            // that teaches the swipe fires on the first low obstacle of a run,
+            // so it should always be teaching it on the same one — and meeting
+            // the swingset before you have the verb is a harsher lesson, since
+            // it's the one you can't jump instead.
+            let rotation = score >= 6 ? ObstacleArt.ducks : [ObstacleArt.bench]
+            obstacle = makeObstacle(rotation.randomElement() ?? ObstacleArt.bench)
             if !hasSpawnedLowObstacle {
                 hasSpawnedLowObstacle = true
                 onFirstLowObstacle?()
@@ -1310,6 +1478,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             sprite.position = CGPoint(x: 0, y: -piece.sink)
             node.addChild(sprite)
 
+            for hang in piece.hangs { hangFromDrawing(hang, on: node, size: size, sink: piece.sink) }
+
             let x = size.width * piece.offsetXFraction
             switch piece.solid {
             case let .box(width, height, base):
@@ -1342,6 +1512,47 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         node.physicsBody = Self.obstacleBody(body)
         return node
+    }
+
+    /// Hangs a swing on its drawing and sets it rocking.
+    ///
+    /// Pinned by its top edge, which is the line the art was cut on, so putting
+    /// that edge on the bar puts the pivot where the chains meet it — and means
+    /// the whole sprite turning is the swing turning about its hanger.
+    ///
+    /// It turns as one piece, so the seat tilts with the chains where a real
+    /// one would stay level under them. At six degrees that is a couple of
+    /// points across the seat, and the alternative is a third sprite and a
+    /// linkage to keep it upright.
+    private func hangFromDrawing(_ hang: ObstacleArt.Hang, on node: SKNode, size: CGSize, sink: CGFloat) {
+        guard let texture = hang.texture, texture.size().width > 0 else { return }
+        let width = size.width * hang.widthFraction
+        let swing = SKSpriteNode(
+            texture: texture,
+            size: CGSize(width: width, height: width * texture.size().height / texture.size().width)
+        )
+        swing.anchorPoint = CGPoint(x: 0.5, y: 1)
+        swing.position = CGPoint(
+            x: size.width * hang.pivotXFraction,
+            y: size.height * (1 - hang.pivotYFraction) - sink
+        )
+        swing.zPosition = 1  // the chains hang in front of the bar they hang from
+        node.addChild(swing)
+
+        let half = ObstacleArt.Hang.swayPeriod / 2
+        func turn(to angle: CGFloat, over duration: TimeInterval) -> SKAction {
+            let action = SKAction.rotate(toAngle: angle, duration: duration)
+            action.timingMode = .easeInEaseOut  // a pendulum, not a metronome
+            return action
+        }
+        swing.zRotation = ObstacleArt.Hang.swayAngle
+        swing.run(.sequence([
+            turn(to: -ObstacleArt.Hang.swayAngle, over: half * (1 - TimeInterval(hang.swayPhase))),
+            .repeatForever(.sequence([
+                turn(to: ObstacleArt.Hang.swayAngle, over: half),
+                turn(to: -ObstacleArt.Hang.swayAngle, over: half),
+            ])),
+        ]))
     }
 
     /// The masks every obstacle shares, whatever shape it came out as.
@@ -1416,6 +1627,19 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         rabbit.position = CGPoint(x: Intro.rabbitStartX, y: Layout.dogGroundLine)
         stage.addChild(rabbit)
         introRabbit = rabbit
+
+        // He has to be off-stage when the clip opens, and where "off-stage"
+        // begins depends on the phone: a 19.5:9 screen stops at 383, the SE
+        // shows all 400. His start is derived from how long the walk takes
+        // rather than chosen, so this can't be arranged by moving him — it is
+        // a check that the numbers it *is* derived from still put him past the
+        // edge, and the SE is the shape it fails on first.
+        assert(
+            rabbit.position.x - rabbit.anchorPoint.x * rabbit.size.width >= Layout.widestVisible,
+            "the grazing rabbit starts on screen: his left edge is "
+                + "\(rabbit.position.x - rabbit.anchorPoint.x * rabbit.size.width), "
+                + "which is inside \(Layout.widestVisible)"
+        )
     }
 
     /// Starts the clip running. Everything it moves is already on screen; this
@@ -1622,7 +1846,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // The man is pinned to the turf rather than given a slide of his own, so
         // that when the world does start moving he can't moonwalk against it.
         let step = gameSpeed * worldScroll * CGFloat(delta)
-        scrollGroundDetail(by: step)
+        scrollLand(by: step)
         if introRidesAlong {
             intro?.position.x -= step
         } else if isIntro {
@@ -1667,11 +1891,13 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         scoreClearedObstacles()
     }
 
-    private func scrollGroundDetail(by distance: CGFloat) {
-        let wrap = Layout.sceneSize.width + 140
-        for tuft in groundDetail.children {
-            tuft.position.x -= distance
-            if tuft.position.x < -70 { tuft.position.x += wrap }
+    /// Walks the painted land left, wrapping each repeat round behind the other
+    /// as it leaves.
+    private func scrollLand(by distance: CGFloat) {
+        let tile = BackdropArt.tileWidth
+        for strip in land.children {
+            strip.position.x -= distance
+            if strip.position.x <= -tile { strip.position.x += tile * 2 }
         }
     }
 
@@ -1757,7 +1983,14 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         scenery.isPaused = true
         // Otherwise he keeps galloping on the spot in the frozen scene.
         dog.childNode(withName: "body")?.isPaused = true
-        enumerateChildNodes(withName: "obstacle") { node, _ in node.removeAllActions() }
+        // Paused as well as stopped: removing the actions holds the obstacle
+        // still, but the swingset's swings carry actions of their own and would
+        // otherwise keep rocking in the frozen scene, exactly as Benny would
+        // keep galloping in it.
+        enumerateChildNodes(withName: "obstacle") { node, _ in
+            node.removeAllActions()
+            node.isPaused = true
+        }
 
         Sfx.shared.play(.crash)
         Haptics.crash()

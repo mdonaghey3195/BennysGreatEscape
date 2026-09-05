@@ -20,6 +20,7 @@ struct TitleView: View {
 
     @State private var showingAbout = false
     @State private var showingSettings = false
+    @State private var showingLeaderboard = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -35,15 +36,14 @@ struct TitleView: View {
                 target(Art.play, in: size, action: onStart)
                     .accessibilityLabel("Play")
 
+                target(Art.leaderboard, in: size) { showingLeaderboard = true }
+                    .accessibilityLabel("Leaderboard")
+
                 target(Art.settings, in: size) { showingSettings = true }
                     .accessibilityLabel("Settings")
 
                 target(Art.about, in: size) { showingAbout = true }
                     .accessibilityLabel("About")
-
-                /*if bestScore > 0 {
-                    bestLabel(in: size)
-                }*/
             }
             .frame(width: size.width, height: size.height)
         }
@@ -56,6 +56,9 @@ struct TitleView: View {
         }
         .fullScreenCover(isPresented: $showingSettings) {
             SettingsView()
+        }
+        .fullScreenCover(isPresented: $showingLeaderboard) {
+            LeaderboardView(bestScore: bestScore)
         }
     }
 
@@ -75,23 +78,13 @@ struct TitleView: View {
         .frame(width: tap.width, height: tap.height)
         .position(x: tap.midX, y: tap.midY)
     }
-
-    /// Tucked into the clear sky to the left of Benny's head — directly under
-    /// the sign is where his ears are.
-    private func bestLabel(in size: CGSize) -> some View {
-        let frame = Art.best.frame(in: size)
-        return Text("Best \(bestScore)")
-            .font(.system(size: max(15, frame.height * 0.66), weight: .heavy, design: .rounded))
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.5), radius: 5, y: 2)
-            .frame(width: frame.width, height: frame.height)
-            .position(x: frame.midX, y: frame.midY)
-            .allowsHitTesting(false)
-    }
 }
 
-/// Where things sit in the artwork, as fractions of it. Measured off the PNG —
-/// re-measure these if the illustration is ever redrawn.
+/// Where the painted buttons sit in the artwork, as fractions of it.
+///
+/// Not measured by eye. `swift Art/MeasureTitleButtons.swift` finds them in the
+/// PNG and prints this block, so a repainted title screen is a rerun and a
+/// paste — which matters most for `paint`, the edge `PressTint` darkens to.
 private enum Art {
     static let size = CGSize(width: 940, height: 1672)
 
@@ -130,24 +123,34 @@ private enum Art {
     }
 
     static let play = Button(
-        tap: Rect(x0: 0.222, y0: 0.681, x1: 0.774, y1: 0.792),
-        paint: Rect(x0: 0.232, y0: 0.687, x1: 0.764, y1: 0.786),
-        cornerRadius: 0.22
+        tap: Rect(x0: 0.206, y0: 0.685, x1: 0.787, y1: 0.790),
+        paint: Rect(x0: 0.232, y0: 0.690, x1: 0.762, y1: 0.785),
+        cornerRadius: 0.16
+    )
+
+    // `tap.x1` here and `tap.x0` on SETTINGS are the one pair of numbers not
+    // taken straight from the script. These two buttons sit side by side with
+    // only a thin gap between them, and a tap target grown by the usual tenth
+    // runs into its neighbour: whichever is added to the ZStack later would
+    // quietly win the strip they share. Trimmed to meet at the middle of the
+    // gap, so the split between them is even and neither shadows the other.
+    static let leaderboard = Button(
+        tap: Rect(x0: 0.141, y0: 0.797, x1: 0.499, y1: 0.867),
+        paint: Rect(x0: 0.157, y0: 0.800, x1: 0.488, y1: 0.864),
+        cornerRadius: 0.28
     )
 
     static let settings = Button(
-        tap: Rect(x0: 0.301, y0: 0.793, x1: 0.697, y1: 0.867),
-        paint: Rect(x0: 0.311, y0: 0.798, x1: 0.687, y1: 0.861),
-        cornerRadius: 0.48
+        tap: Rect(x0: 0.499, y0: 0.796, x1: 0.862, y1: 0.868),
+        paint: Rect(x0: 0.510, y0: 0.799, x1: 0.846, y1: 0.865),
+        cornerRadius: 0.28
     )
 
     static let about = Button(
-        tap: Rect(x0: 0.299, y0: 0.872, x1: 0.698, y1: 0.936),
-        paint: Rect(x0: 0.309, y0: 0.877, x1: 0.688, y1: 0.930),
-        cornerRadius: 0.48
+        tap: Rect(x0: 0.295, y0: 0.871, x1: 0.703, y1: 0.937),
+        paint: Rect(x0: 0.313, y0: 0.874, x1: 0.685, y1: 0.934),
+        cornerRadius: 0.33
     )
-
-    static let best = Rect(x0: 0.075, y0: 0.300, x1: 0.470, y1: 0.345)
 }
 
 #Preview {

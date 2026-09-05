@@ -36,14 +36,16 @@ struct AboutView: View {
             }
             .ignoresSafeArea(edges: .top)
 
-            // Placed against the top of the artwork rather than the safe
-            // area, so it lands in the strip of sky and foliage above the
-            // logo — high enough to clear BENNY'S, low enough to clear the
-            // Dynamic Island, and never over Benny himself.
-            GeometryReader { proxy in
-                SignBackButton { dismiss() }
-                    .padding(.leading, 10)
-                    .padding(.top, proxy.size.width * headerAspect * 0.07)
+            // Placed against the top of the artwork rather than the safe area,
+            // so it sits in the corner of the illustration the way it does on
+            // any page with a picture at the top. Fixed insets and not a
+            // fraction of the header: a 40pt disc is the size it is whatever
+            // the artwork behind it is doing, and these put it clear of both
+            // the logo and the Dynamic Island.
+            GeometryReader { _ in
+                CircleBackButton { dismiss() }
+                    .padding(.leading, 32)
+                    .padding(.top, 26)
             }
             .ignoresSafeArea(edges: .top)
         }
@@ -52,15 +54,11 @@ struct AboutView: View {
         .statusBarHidden()
     }
 
-    /// `about_header` is 853 x 580, and it's drawn full width, so this turns
-    /// the screen's width into the header's height.
-    private let headerAspect: CGFloat = 580 / 853
-
     private var panel: some View {
         VStack(spacing: 0) {
             heading
 
-            Text("Benny's Great Escape is a paws-itively fun endless runner where you help Benny the Treeing Walker Coonhound jump and dash his way past logs, bushes, tree stumps, park benches and whatever else the countryside throws at him.")
+            Text("Benny's Great Escape is a paws-itively fun endless runner where you help Benny the Treeing Walker Coonhound jump and dash his way past logs, bushes, tree stumps, park benches, swingsets and whatever else the countryside throws at him.")
                 .aboutBody()
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)

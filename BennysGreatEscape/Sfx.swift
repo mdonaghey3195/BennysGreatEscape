@@ -36,10 +36,22 @@ final class Sfx {
     /// about the game rather than about the sound. `Music` plays at 0.55, and
     /// these sit around and under it: the crash is the only one allowed to be
     /// louder than the tune, because it is the only one that ends a run.
+    ///
+    /// How often a sound fires is most of how loud it should be. The crash
+    /// happens once; the jump, the landing that always follows it and the slide
+    /// happen every few seconds for as long as the run lasts, and anything that
+    /// repeats at that rate wears out long before a one-off does.
+    ///
+    /// Those three are at a quarter of what they opened at, which is -12 dB and
+    /// not the -6 dB that halving the number gives you. Loudness is not linear
+    /// in this figure: it takes about -10 dB before an ear calls a sound half as
+    /// loud, and more than that on something as short as these, where what is
+    /// heard is mostly the attack. Halving twice is the honest way to halve
+    /// once.
     private static let trim: [Sound: Float] = [
-        .jump: 0.42,
-        .land: 0.52,
-        .slide: 0.38,
+        .jump: 0.105,
+        .land: 0.13,
+        .slide: 0.095,
         .crash: 0.95,
     ]
 

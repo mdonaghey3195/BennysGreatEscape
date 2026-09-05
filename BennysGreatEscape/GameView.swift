@@ -84,9 +84,18 @@ struct GameView: View {
             // the frame it first fires, are both a miss.
             Sfx.shared.prepare()
             Haptics.prepare()
+            // Started at launch and never waited on. The game is fully
+            // playable signed out, and the board is a screen most players open
+            // once.
+            Leaderboard.shared.authenticate()
             scene.onScoreChange = { score = $0 }
             scene.onGameOver = {
                 bestScore = max(bestScore, $0)
+                // Every run, not just the ones that beat the local best. Game
+                // Center keeps the higher of the two itself, and posting
+                // unconditionally means a score still reaches the board on a
+                // device whose `bestScore` was wiped by a restore.
+                Leaderboard.shared.submit($0)
                 Music.shared.duck()
             }
             scene.onRetry = { Music.shared.unduck() }
@@ -158,7 +167,7 @@ struct GameView: View {
         HStack(alignment: .top) {
             // Sits above the SpriteView, so it takes the tap rather than the
             // scene turning it into a jump.
-            CircleBackButton(action: returnToTitle, symbol: "chevron.left")
+            CircleBackButton(action: returnToTitle)
 
             Spacer()
 
@@ -172,7 +181,14 @@ struct GameView: View {
                 if bestScore > 0 {
                     Text("Best \(bestScore)")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundStyle(.black.opacity(0.55))
+                        // 0.7, up from 0.55. Sampled off the sky actually
+                        // behind this corner of the HUD, 0.55 gives 4.01:1 and
+                        // this gives 6.30:1 — the first is under the 4.5:1
+                        // readability bar and this is comfortably over it.
+                        //
+                        // Still clearly secondary to the score above it, which
+                        // runs at full strength and measures 11.5:1 on screen.
+                        .foregroundStyle(.black.opacity(0.7))
                 }
             }
         }

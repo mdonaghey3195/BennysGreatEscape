@@ -26,34 +26,53 @@ enum GameStyle {
     /// The amber of the painted buttons.
     static let amber = Color(red: 0.98, green: 0.76, blue: 0.24)
     static let amberDeep = Color(red: 0.85, green: 0.58, blue: 0.10)
+
+    /// A shade of the parchment rather than a colour of its own, for rimming
+    /// something cut out of it.
+    static let parchmentRim = Color(red: 0.969, green: 0.941, blue: 0.886)
+
+    /// The brown the back arrow is cut in. Darker than the paw prints the About
+    /// page's headings carry, because it has to hold at 18pt on a light disc.
+    static let bark = Color(red: 0.47, green: 0.27, blue: 0.10)
 }
 
-/// The round amber back button the illustrated screens use — drawn rather than
-/// painted into the art, so it can sit clear of the Dynamic Island and be a
-/// proper size under a thumb.
+/// The way out of every illustrated screen: a disc of the same parchment the
+/// About page is written on, with a brown arrow cut into it.
+///
+/// Drawn rather than painted into the artwork, so it sits clear of the Dynamic
+/// Island and is a proper size under a thumb wherever it is used.
+///
+/// It reads as part of the page rather than a control dropped on top of one
+/// because it is made of the page: `GameStyle.parchment` is the panel's own
+/// paper, and the rim is a shade of it rather than a white outline. The amber
+/// gradient this used to wear was the loudest thing on either screen and
+/// belonged to the buttons you press to go *in*, not the one you leave by.
 struct CircleBackButton: View {
     let action: () -> Void
     var symbol = "arrow.left"
     var label = "Back"
 
+    /// The drawn disc. The tap target around it is larger — 44, the smallest
+    /// thing a thumb should be asked to find.
+    private let diameter: CGFloat = 40
+
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 20, weight: .heavy))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(GameStyle.bark)
+                .frame(width: diameter, height: diameter)
                 .background {
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [GameStyle.amber, GameStyle.amberDeep],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 3))
-                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                        .fill(GameStyle.parchment)
+                        // A rim a shade lighter than the paper, not a white
+                        // ring: enough to lift the disc off dark foliage,
+                        // invisible against sky.
+                        .overlay(Circle().strokeBorder(GameStyle.parchmentRim, lineWidth: 2))
+                        .shadow(color: .black.opacity(0.22), radius: 5, y: 2)
                 }
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
         }
         .buttonStyle(SpringyButton())
         .accessibilityLabel(label)
@@ -116,79 +135,3 @@ struct PressTint: ButtonStyle {
     }
 }
 
-/// The About page's way out: the label on a plate you can see the artwork
-/// through.
-///
-/// Solid, it was one more object competing with the logo for the same corner of
-/// the illustration; gone entirely, the letters had nothing holding them
-/// together. Half-there does both jobs — the sky and the foliage carry on
-/// through it, and the letters still sit on something.
-///
-/// The white label keeps its shadows regardless. The plate is too faint to be
-/// relied on for contrast, so what actually makes the letters legible is the
-/// same thing that made them legible with no plate at all: a soft shadow to
-/// lift them off the background and a hard one under it for a carved edge.
-struct SignBackButton: View {
-    let action: () -> Void
-    var label = "BACK"
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: "arrow.left")
-                    .font(.system(size: 16, weight: .black))
-                Text(label)
-                    .font(.system(size: 18, weight: .black, design: .rounded))
-                    .kerning(0.5)
-            }
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-            .shadow(color: Wood.outline.opacity(0.55), radius: 0, y: 1.5)
-            .padding(.horizontal, 15)
-            .frame(height: 38)
-            .background { plate }
-            // Grown to a thumb-sized target around the plate, and made solid so
-            // the gaps between the letters take the tap too.
-            .padding(6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(SpringyButton())
-        .accessibilityLabel("Back")
-    }
-
-    /// Timber, most of the way there.
-    ///
-    /// 0.82 and not a half: brown over sky-blue turns grey long before it turns
-    /// see-through, so a plate at half strength doesn't read as translucent
-    /// wood, it reads as a smudge on the artwork. This is as far as it can be
-    /// taken down while still being made of the same stuff as the painted
-    /// signs — the tree and the foliage come through it, and it is still brown.
-    ///
-    /// The rim is carried at more of it than the fill: an edge that fades at the
-    /// same rate as what it encloses stops reading as an edge.
-    private var plate: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [Wood.light, Wood.base, Wood.deep],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .opacity(0.82)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Wood.outline.opacity(0.9), lineWidth: 2.5)
-            }
-            .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
-    }
-}
-
-/// Sampled from the signage in the game's artwork, so the plate is the same
-/// timber as the painted signs even at half strength.
-private enum Wood {
-    static let light = Color(red: 0.66, green: 0.38, blue: 0.10)
-    static let base = Color(red: 0.56, green: 0.29, blue: 0.055)
-    static let deep = Color(red: 0.43, green: 0.20, blue: 0.03)
-    static let outline = Color(red: 0.24, green: 0.10, blue: 0.02)
-}
