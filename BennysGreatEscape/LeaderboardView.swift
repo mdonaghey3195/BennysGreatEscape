@@ -2,9 +2,10 @@
 //  LeaderboardView.swift
 //  Benny's Great Escape
 //
-//  The global top hundred, drawn the same way the About page is: the artwork
-//  as a header, a parchment panel under it, and the way back out laid over the
-//  corner of the illustration.
+//  A popup card over the title screen, the same way Settings is — see
+//  `SettingsView` for why: the backdrop it used to redraw as a full page is
+//  already showing behind it, dimmed, so there is nothing here but the board
+//  itself, scrollable inside a fixed-size card.
 //
 //  Game Center will happily present this screen itself, and it is not used.
 //  `GKGameCenterViewController` is a stock iOS sheet — grouped table, system
@@ -26,7 +27,10 @@ struct LeaderboardView: View {
     /// even with no signal.
     let bestScore: Int
 
-    @Environment(\.dismiss) private var dismiss
+    /// Closed by `TitleView`, which owns whether the popup is showing at all —
+    /// same shape as `SettingsView.onDismiss`.
+    let onDismiss: () -> Void
+
     @StateObject private var leaderboard = Leaderboard.shared
 
     @State private var phase: Phase
@@ -44,8 +48,9 @@ struct LeaderboardView: View {
         case failed(Leaderboard.Failure)
     }
 
-    init(bestScore: Int) {
+    init(bestScore: Int, onDismiss: @escaping () -> Void) {
         self.bestScore = bestScore
+        self.onDismiss = onDismiss
         _phase = State(initialValue: .loading)
     }
 
@@ -53,36 +58,32 @@ struct LeaderboardView: View {
     /// only way to look at a full board without a signed-in account.
     fileprivate init(bestScore: Int, phase: Phase) {
         self.bestScore = bestScore
+        self.onDismiss = {}
         _phase = State(initialValue: phase)
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            GameStyle.parchment.ignoresSafeArea()
-
+        ZStack(alignment: .topTrailing) {
             ScrollView {
-                VStack(spacing: 0) {
-                    Image("about_header")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity)
-
-                    panel
-                }
+                panel
             }
-            .ignoresSafeArea(edges: .top)
 
-            // The same corner, the same disc, the same insets as the About
-            // page — the two screens share a header illustration, so anything
-            // else would read as two different ways out of one place.
-            GeometryReader { _ in
-                CircleBackButton { dismiss() }
-                    .padding(.leading, 32)
-                    .padding(.top, 26)
+            // A plain close disc rather than the painted BACK plate Settings
+            // uses — there's no card art to paint one into, and a corner "X"
+            // is the standard way out of a popup that isn't itself painted.
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .black))
+                    .foregroundStyle(GameStyle.ink.opacity(0.7))
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(.white.opacity(0.7)))
             }
-            .ignoresSafeArea(edges: .top)
+            .padding(10)
+            .accessibilityLabel("Close")
         }
-        .statusBarHidden()
+        .background(GameStyle.parchment)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
         .task { await load() }
     }
 

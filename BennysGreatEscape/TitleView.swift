@@ -27,38 +27,119 @@ struct TitleView: View {
             let size = proxy.size
 
             ZStack(alignment: .topLeading) {
-                Image("title_art")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: size.width, height: size.height)
-                    .clipped()
+                // Everything the title screen actually is, grouped so a single
+                // modifier can disable all of it at once while a popup is up
+                // — a popup over this card is pointless if PLAY is still
+                // reachable behind the dimming.
+                Group {
+                    // Painted landscape, 1844x853 — close enough to the widest
+                    // supported phone's own aspect (2.174) that `.scaledToFill`
+                    // crops only a sliver off the sides on anything narrower, the
+                    // same way the gameplay scene's own background does. Replaces
+                    // the portrait painting the landscape spike used to letterbox;
+                    // `Art.Rect.frame(in:)` matches with `max` again now that
+                    // there's a real landscape painting to fill with.
+                    Image("title_art")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: size.width, height: size.height)
+                        .clipped()
 
-                target(Art.play, in: size, action: onStart)
-                    .accessibilityLabel("Play")
+                    target(Art.play, in: size, action: onStart)
+                        .accessibilityLabel("Play")
 
-                target(Art.leaderboard, in: size) { showingLeaderboard = true }
-                    .accessibilityLabel("Leaderboard")
+                    target(Art.leaderboard, in: size) { openLeaderboard() }
+                        .accessibilityLabel("Leaderboard")
 
-                target(Art.settings, in: size) { showingSettings = true }
-                    .accessibilityLabel("Settings")
+                    target(Art.settings, in: size) { openSettings() }
+                        .accessibilityLabel("Settings")
 
-                target(Art.about, in: size) { showingAbout = true }
-                    .accessibilityLabel("About")
+                    target(Art.about, in: size) { openAbout() }
+                        .accessibilityLabel("About")
+                }
+                .allowsHitTesting(!showingSettings && !showingLeaderboard && !showingAbout)
+                .accessibilityHidden(showingSettings || showingLeaderboard || showingAbout)
+
+                // Popups, not screens: Benny and the logo stay put and dim
+                // behind them rather than being redrawn a second time — see
+                // `SettingsView`. Tapping the scrim is the same way out as
+                // each card's own close control.
+                if showingSettings {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                        .onTapGesture { closeSettings() }
+
+                    SettingsView(onDismiss: closeSettings)
+                        .aspectRatio(1364.0 / 1153.0, contentMode: .fit)
+                        .frame(width: size.width * 0.34)
+                        .position(x: size.width / 2, y: size.height / 2)
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                }
+
+                if showingLeaderboard {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                        .onTapGesture { closeLeaderboard() }
+
+                    LeaderboardView(bestScore: bestScore, onDismiss: closeLeaderboard)
+                        .frame(width: size.width * 0.42, height: size.height * 0.86)
+                        .position(x: size.width / 2, y: size.height / 2)
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                }
+
+                if showingAbout {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                        .onTapGesture { closeAbout() }
+
+                    AboutView(onDismiss: closeAbout)
+                        .aspectRatio(1024.0 / 1536.0, contentMode: .fit)
+                        .frame(height: size.height * 0.86)
+                        .position(x: size.width / 2, y: size.height / 2)
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                }
             }
             .frame(width: size.width, height: size.height)
         }
         .ignoresSafeArea()
-        // Full screen rather than a sheet: a card inset from the top with the
-        // title screen peeking round it is exactly the stock-iOS look this
-        // page is meant to avoid.
-        .fullScreenCover(isPresented: $showingAbout) {
-            AboutView(bestScore: bestScore)
+    }
+
+    private func openSettings() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showingSettings = true
         }
-        .fullScreenCover(isPresented: $showingSettings) {
-            SettingsView()
+    }
+
+    private func closeSettings() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showingSettings = false
         }
-        .fullScreenCover(isPresented: $showingLeaderboard) {
-            LeaderboardView(bestScore: bestScore)
+    }
+
+    private func openLeaderboard() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showingLeaderboard = true
+        }
+    }
+
+    private func closeLeaderboard() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showingLeaderboard = false
+        }
+    }
+
+    private func openAbout() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showingAbout = true
+        }
+    }
+
+    private func closeAbout() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showingAbout = false
         }
     }
 
@@ -86,7 +167,7 @@ struct TitleView: View {
 /// PNG and prints this block, so a repainted title screen is a rerun and a
 /// paste — which matters most for `paint`, the edge `PressTint` darkens to.
 private enum Art {
-    static let size = CGSize(width: 940, height: 1672)
+    static let size = CGSize(width: 1844, height: 853)
 
     struct Rect {
         let x0, y0, x1, y1: CGFloat
@@ -122,34 +203,40 @@ private enum Art {
         let cornerRadius: CGFloat
     }
 
+    // PLAY's paint rect is measured by hand rather than by
+    // `MeasureTitleButtons.swift` — this new painting's wood grain and
+    // lighting fall outside the script's `isTimber` colour test across most of
+    // the button, so the automated pass only ever caught a thin band through
+    // the lettering (406x29 instead of the true ~440x143). LEADERBOARD,
+    // SETTINGS and ABOUT are pale stone rather than timber, matched the
+    // script's `isStone` test fine, and are pasted straight from its output.
     static let play = Button(
-        tap: Rect(x0: 0.206, y0: 0.685, x1: 0.787, y1: 0.790),
-        paint: Rect(x0: 0.232, y0: 0.690, x1: 0.762, y1: 0.785),
-        cornerRadius: 0.16
+        tap: Rect(x0: 0.551, y0: 0.464, x1: 0.814, y1: 0.648),
+        paint: Rect(x0: 0.564, y0: 0.472, x1: 0.802, y1: 0.640),
+        cornerRadius: 0.31
     )
 
-    // `tap.x1` here and `tap.x0` on SETTINGS are the one pair of numbers not
-    // taken straight from the script. These two buttons sit side by side with
-    // only a thin gap between them, and a tap target grown by the usual tenth
-    // runs into its neighbour: whichever is added to the ZStack later would
-    // quietly win the strip they share. Trimmed to meet at the middle of the
-    // gap, so the split between them is even and neither shadows the other.
+    // `tap.x1` here and `tap.x0` on SETTINGS are trimmed to meet at the middle
+    // of the gap between them rather than the script's plain 10% margin —
+    // these two sit close enough side by side that the usual margin has them
+    // overlap, and whichever target the ZStack adds second (SETTINGS) would
+    // quietly win the shared strip.
     static let leaderboard = Button(
-        tap: Rect(x0: 0.141, y0: 0.797, x1: 0.499, y1: 0.867),
-        paint: Rect(x0: 0.157, y0: 0.800, x1: 0.488, y1: 0.864),
-        cornerRadius: 0.28
+        tap: Rect(x0: 0.521, y0: 0.658, x1: 0.685, y1: 0.775),
+        paint: Rect(x0: 0.528, y0: 0.662, x1: 0.680, y1: 0.770),
+        cornerRadius: 0.22
     )
 
     static let settings = Button(
-        tap: Rect(x0: 0.499, y0: 0.796, x1: 0.862, y1: 0.868),
-        paint: Rect(x0: 0.510, y0: 0.799, x1: 0.846, y1: 0.865),
-        cornerRadius: 0.28
+        tap: Rect(x0: 0.685, y0: 0.655, x1: 0.849, y1: 0.777),
+        paint: Rect(x0: 0.689, y0: 0.660, x1: 0.841, y1: 0.773),
+        cornerRadius: 0.20
     )
 
     static let about = Button(
-        tap: Rect(x0: 0.295, y0: 0.871, x1: 0.703, y1: 0.937),
-        paint: Rect(x0: 0.313, y0: 0.874, x1: 0.685, y1: 0.934),
-        cornerRadius: 0.33
+        tap: Rect(x0: 0.591, y0: 0.784, x1: 0.776, y1: 0.898),
+        paint: Rect(x0: 0.599, y0: 0.789, x1: 0.768, y1: 0.893),
+        cornerRadius: 0.20
     )
 }
 

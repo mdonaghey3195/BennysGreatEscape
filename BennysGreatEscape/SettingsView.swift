@@ -2,14 +2,18 @@
 //  SettingsView.swift
 //  Benny's Great Escape
 //
-//  The illustration is the screen. The card, its carved heading, the sound icon
-//  and the row's text are all painted, so nothing here redraws them — the only
-//  live parts are the switch, which has to show a state the painting can't, an
-//  invisible target over the row that takes the tap, and the way out.
+//  A popup card, not a screen — presented by `TitleView` as an overlay above
+//  a dimmed title screen rather than a full-screen cover, so Benny, the logo
+//  and the lake stay put behind it instead of being redrawn a second time.
 //
-//  Positions are fractions of the artwork, mapped through the same aspect-fill
-//  transform the image itself uses, so the live switch stays on top of the
-//  painted one whatever shape the screen is.
+//  The card, its carved heading, the sound icon and the row's text are all
+//  painted, so nothing here redraws them — the only live parts are the
+//  switch, which has to show a state the painting can't, an invisible target
+//  over the row that takes the tap, and the way out.
+//
+//  Positions are fractions of `settings_card`, mapped through the same
+//  aspect-fill transform the image itself uses, so the live switch stays on
+//  top of the painted one whatever size the card is drawn at.
 //
 
 import SwiftUI
@@ -19,7 +23,10 @@ struct SettingsView: View {
     /// both screens agree without either owning it.
     @AppStorage("musicOn") private var musicOn = true
 
-    @Environment(\.dismiss) private var dismiss
+    /// Closed by `TitleView`, which owns whether the popup is showing at all —
+    /// this view doesn't know if it's a sheet, a cover or an overlay, only how
+    /// to ask to go away.
+    let onDismiss: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -30,11 +37,13 @@ struct SettingsView: View {
             let backPaint = Art.back.paint.frame(in: size)
 
             ZStack(alignment: .topLeading) {
-                Image("settings_art")
+                // A true cutout — real alpha around the rounded corners, not a
+                // rectangular crop — so nothing needs clipping to hide a
+                // background that was never baked in behind it.
+                Image("settings_card")
                     .resizable()
-                    .scaledToFill()
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: size.width, height: size.height)
-                    .clipped()
 
                 // The whole painted row is the target, not just the switch —
                 // the switch is the smallest thing on the screen and a settings
@@ -60,7 +69,7 @@ struct SettingsView: View {
                 // BACK is painted into the illustration, so this only has to
                 // take the tap and darken the plate while a finger is down —
                 // the same answer the title screen's painted buttons give.
-                Button { dismiss() } label: {
+                Button(action: onDismiss) {
                     Color.clear.contentShape(Rectangle())
                 }
                 .buttonStyle(PressTint(shadow: backPaint.size,
@@ -71,12 +80,9 @@ struct SettingsView: View {
             }
             .frame(width: size.width, height: size.height)
         }
-        .ignoresSafeArea()
-        // The rest of the game hides it; a clock over the illustration here
-        // would be the only place it shows.
-        .statusBarHidden()
-        // Applying the change here rather than inside the row keeps it working
-        // however the value came to change.
+        // A floating card needs to lift off whatever is behind it — the
+        // backdrop used to do this job by simply being the whole screen.
+        .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
         .onChange(of: musicOn) { _, isOn in
             Music.shared.isEnabled = isOn
             Sfx.shared.isEnabled = isOn
@@ -149,7 +155,7 @@ private struct StoneSwitch: View {
     }
 }
 
-/// Sampled from `settings_art` so the drawn switch matches the painted one.
+/// Sampled from `settings_card` so the drawn switch matches the painted one.
 private enum Palette {
     static let outline = Color(red: 0.263, green: 0.192, blue: 0.161)
     static let stone = Color(red: 0.561, green: 0.525, blue: 0.427)
@@ -163,10 +169,10 @@ private enum Palette {
     static let label = Color(red: 0.922, green: 0.929, blue: 0.886)
 }
 
-/// Where things sit in `settings_art`, as fractions of it. Measured off the
+/// Where things sit in `settings_card`, as fractions of it. Measured off the
 /// PNG — re-measure these if the illustration is ever redrawn.
 private enum Art {
-    static let size = CGSize(width: 941, height: 1672)
+    static let size = CGSize(width: 1364, height: 1153)
 
     struct Rect {
         let x0, y0, x1, y1: CGFloat
@@ -189,10 +195,10 @@ private enum Art {
 
     /// The painted switch. The live one is drawn a touch larger so no painted
     /// edge shows around it.
-    static let toggle = Rect(x0: 0.672, y0: 0.482, x1: 0.892, y1: 0.539)
+    static let toggle = Rect(x0: 0.718, y0: 0.385, x1: 0.939, y1: 0.519)
 
     /// The whole painted row — icon, title, detail and switch.
-    static let soundRow = Rect(x0: 0.110, y0: 0.459, x1: 0.900, y1: 0.564)
+    static let soundRow = Rect(x0: 0.068, y0: 0.357, x1: 0.939, y1: 0.542)
 
     /// A painted button: where it can be tapped, where it actually is, and how
     /// round its corners are as a fraction of its height. `paint` is the
@@ -206,20 +212,13 @@ private enum Art {
 
     /// The painted BACK plate. The drawing is in the artwork; only the tap and
     /// the press tint are live.
-    ///
-    /// The shipped PNG is not the supplied original. Two edits: the BACK plate
-    /// was lifted and moved 120px down the card (it sat tight under the divider
-    /// with a wide gap beneath it), and the whole illustration was then pushed
-    /// 48px down so the paw and title clear the Dynamic Island — done by
-    /// stretching the 76px of sky above the logo rather than scaling the logo.
-    /// Re-measure everything here if the illustration is ever replaced.
     static let back = Button(
-        tap: Rect(x0: 0.290, y0: 0.673, x1: 0.710, y1: 0.762),
-        paint: Rect(x0: 0.301, y0: 0.683, x1: 0.699, y1: 0.754),
-        cornerRadius: 0.36
+        tap: Rect(x0: 0.241, y0: 0.680, x1: 0.754, y1: 0.863),
+        paint: Rect(x0: 0.265, y0: 0.689, x1: 0.731, y1: 0.854),
+        cornerRadius: 0.31
     )
 }
 
 #Preview {
-    SettingsView()
+    SettingsView(onDismiss: {})
 }

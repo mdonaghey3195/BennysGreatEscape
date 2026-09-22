@@ -30,48 +30,81 @@ private enum PhysicsCategory {
 /// behave identically on every device rather than drifting with the size the
 /// view happened to be handed.
 ///
-/// Authored portrait, because that is how the app is held. `.aspectFill` crops
-/// a little off the edges to fill the screen, so nothing that matters sits near
-/// one: the ground slab runs well below `groundTop`, and the live score is drawn
-/// by SwiftUI over the top rather than inside the scene.
+/// Authored landscape. `.aspectFill` crops a little off the top and bottom to
+/// fill the screen, so nothing that matters sits near either: the painting runs
+/// well below `groundTop`, and the live score is drawn by SwiftUI over the top
+/// rather than inside the scene.
 private enum Layout {
-    static let sceneSize = CGSize(width: 400, height: 800)
+    static let sceneSize = CGSize(width: 800, height: 500)
 
-    /// What `.aspectFill` crops off each side on a 19.5:9 phone, leaving
-    /// 17…383 of the 400 authored — and so the edge the opening clip is framed
-    /// against.
+    /// How much of the world every length below is drawn at, against the
+    /// portrait numbers this was all tuned as.
     ///
-    /// Every iPhone this ships to is that shape bar one, and they crop between
-    /// 15.1 and 16.02 units. The binding one is 402x874 — the 16 Pro, 17 and
-    /// 17 Pro — which is worth naming because it is neither the tallest phone
-    /// nor the widest, and this used to say "the tallest" and be 16.
+    /// Landscape buys width and spends height: 500 units tall, of which
+    /// `.aspectFill` shows only 368. At his portrait size Benny leaves the top
+    /// of the frame at the apex of a jump, so the whole world comes down
+    /// together rather than the jump alone being clipped — which would have
+    /// broken the clearances every obstacle is sized by.
     ///
-    /// The exception is `widestVisible`, below, and it is the more dangerous of
-    /// the two.
-    static let visibleInset: CGFloat = 17
+    /// One number, so the relationships the comments below describe all still
+    /// hold and the spike is a single edit to reverse.
+    static let worldScale: CGFloat = 0.8
 
-    /// The widest the scene can ever be shown: all of it.
+    /// What the speeds scale by, which is deliberately not `worldScale`.
     ///
-    /// Everything above assumes a slice gets cropped off each side, and on the
-    /// SE — the one 16:9 phone still taking iOS 17 — none of it does. That
-    /// screen is squarer than the scene, so `.aspectFill` takes its crop off the
-    /// top and bottom instead and the full authored width is on show.
+    /// A jump's airtime goes as the square root of its height, so a world scaled
+    /// by `s` with its speeds scaled by `s` too would have every jump cover only
+    /// `s^1.5` of the ground it used to — while the obstacle widths, which scale
+    /// by `s`, carried on expecting the full share. Speed has to go as the
+    /// square root for the distance a jump covers to scale with everything else,
+    /// and it is the distance that binds. See `jumpHeight`.
+    static let speedScale: CGFloat = sqrt(worldScale)
+
+    /// Never a crop — landscape crops the other axis, see `visibleInsetY` — but
+    /// the opening clip is framed against it anyway, because the scene is
+    /// presented edge to edge (`.ignoresSafeArea()`) and a notch or Dynamic
+    /// Island can land on this side of it even though the art itself never
+    /// loses a pixel here: the scene is 1.60 wide against 2.17 on the phone, so
+    /// `.aspectFill` fits the width exactly.
     ///
-    /// Which makes this the number anything hidden off-stage has to clear.
-    /// Framing against `visibleInset` is right for things meant to sit *at* the
-    /// edge, and wrong for things meant to be past it: 384 is where a tall
-    /// phone stops, but the SE keeps going to 400.
+    /// Which side depends on which of the two supported landscape orientations
+    /// is current — the notch flips with it — so this can't be a constant. Set
+    /// once, live, in `didMove(to:)`, from `view.safeAreaInsets.left`: whichever
+    /// orientation is current, that is the edge the notch actually lands on.
+    static var visibleInset: CGFloat = 0
+
+    /// The widest the scene can ever be shown, which is now always all of it.
     static let widestVisible: CGFloat = sceneSize.width
 
-    /// Where the dog and every obstacle stand. Set high enough that the action
-    /// occupies the lower third rather than a thin strip under empty sky.
-    static let groundTop: CGFloat = 280
+    /// What `.aspectFill` crops off the top and bottom on the tallest-ratio
+    /// phone, leaving 66…434 of the 500 authored.
+    ///
+    /// The binding one is 874x402 — the 16 Pro, 17 and 17 Pro — at 2.174, with
+    /// the Pro Max phones within a hair of it. This is the ceiling a jump has to
+    /// stay under, and it is what caps `worldScale`.
+    ///
+    /// The SE is the exception here exactly as it was for the sides, and in the
+    /// safe direction this time: at 1.78 it is squarer than the scene, so it
+    /// crops 25 rather than 66 and shows more sky, not less.
+    static let visibleInsetY: CGFloat = 66
+
+    /// The top of what is actually shown, as against the top of what is
+    /// authored. The line Benny's head is checked against at the apex.
+    static var visibleTop: CGFloat { sceneSize.height - visibleInsetY }
+
+    /// Where the dog and every obstacle stand.
+    ///
+    /// Just under a third of the way up what is actually shown — 109 above the
+    /// visible bottom edge of 66, in a band 368 tall. Portrait had it at 35%,
+    /// and the difference is sky that landscape can no longer afford: the
+    /// headroom above this is what a jump has to fit inside.
+    static let groundTop: CGFloat = 175
 
     /// Sized off the collar, which is the one part of the drawing that keeps a
     /// fixed size whatever Benny's doing — matching canvas widths would shrink
     /// him, because the gallop poses stretch the canvas without making the dog
     /// any bigger.
-    static let dogWidth: CGFloat = 125
+    static let dogWidth: CGFloat = 125 * worldScale
 
     /// Height follows the artwork's aspect so Benny is never stretched, and
     /// keeps following it if the drawing is ever replaced with one shaped
@@ -80,7 +113,18 @@ private enum Layout {
         CGSize(width: dogWidth, height: dogWidth / DogArt.aspect)
     }
 
-    static let dogX: CGFloat = 120
+    /// Not scaled with the world, and the one length that isn't.
+    ///
+    /// Held near its portrait value in absolute terms, because against an
+    /// 800-wide scene this is what sets the runway: 700 units of warning where
+    /// portrait had 280. That is the whole point of the exercise.
+    static let dogX: CGFloat = 100
+
+    /// Where an obstacle is stood up, far enough past the right edge that it
+    /// is never seen arriving. A cliff starts here too and is then nudged
+    /// further right to land clear of the backdrop's turf sprigs — see
+    /// `cliffSpawnX`, which measures its nudge from this.
+    static var spawnX: CGFloat { sceneSize.width + 60 }
 
     /// Where a run starts. This is what caps the obstacle sizes in
     /// `ObstacleArt`: a jump lasts a fixed time, so the slowest the world ever
@@ -90,17 +134,17 @@ private enum Layout {
     /// It rose with Benny. The world scrolled at 220 when he was 80pt wide, and
     /// leaving it there while he grew made the game feel steadily more sluggish
     /// against him — and held the things he jumps down to toys beside him.
-    static let openingSpeed: CGFloat = 280
+    static let openingSpeed: CGFloat = 280 * speedScale
 
     /// Where the ramp tops out. Held 160 above the opening, as it always has
     /// been, so a run still accelerates over its first 40 obstacles.
-    static let topSpeed: CGFloat = 440
+    static let topSpeed: CGFloat = 440 * speedScale
 
     /// Apex of a jump above `groundTop`. Obstacles top out around 78, so this is
     /// forgiving without feeling floaty.
     ///
     /// Height isn't the binding constraint, though — width is. A jump lasts a
-    /// fixed time, so at the opening scroll speed it covers only ~289pt, and an
+    /// fixed time, so at the opening scroll speed it covers only ~231pt, and an
     /// obstacle's box plus Benny's own has to fit inside the stretch of that arc
     /// spent above it. That is what caps the obstacle sizes in `ObstacleArt`.
     ///
@@ -110,7 +154,7 @@ private enum Layout {
     /// spawn interval floor in `update` up with it, which the airtime has to
     /// stay under — and with the floor where it is, this is as high as it can
     /// go. Buying clearance beyond here means `Layout.openingSpeed`, not this.
-    static let jumpHeight: CGFloat = 180
+    static let jumpHeight: CGFloat = 180 * worldScale
 
     /// How far a painted obstacle is pushed below the turf line by default.
     ///
@@ -120,7 +164,7 @@ private enum Layout {
     /// top of that dark band, and the obstacle reads as resting on the ground
     /// rather than growing out of it. Individual pieces override it — how much
     /// painted grass there is to bury differs per drawing.
-    static let obstacleSink: CGFloat = 12
+    static let obstacleSink: CGFloat = 12 * worldScale
 
     /// The same idea for Benny, and the reason he isn't left standing on a
     /// ledge now that everything else is planted deeper.
@@ -133,7 +177,7 @@ private enum Layout {
     /// Unlike the obstacles' sink this moves his physics as well as his
     /// drawing: the ground edge he rests on comes down with him, so the art
     /// never disagrees with the box about where the floor is.
-    static let dogPlantDepth: CGFloat = 7
+    static let dogPlantDepth: CGFloat = 7 * worldScale
 
     /// Where Benny's paws and every obstacle's base actually come to rest, as
     /// against `groundTop`, which is where the turf is *drawn*.
@@ -146,12 +190,12 @@ private enum Layout {
     ///
     /// The bench is sized *from* this rather than the other way round, so the
     /// one number that decides whether ducking works can be retuned on its own.
-    static let duckClearance: CGFloat = 52
+    static let duckClearance: CGFloat = 52 * worldScale
 
     /// A slide covers this much ground rather than lasting a fixed time — at
     /// the top scroll speed a fixed duration would end before the bench had
     /// finished passing. Bench plus dog is about 330, so this leaves margin.
-    static let slideDistance: CGFloat = 400
+    static let slideDistance: CGFloat = 400 * worldScale
 
     /// Thick dark outlines are most of what makes flat shapes read as cartoon.
     static let outline: CGFloat = 4
@@ -399,7 +443,9 @@ private enum Intro {
     ///
     /// Placed by his trailing leg at full stride rather than picked — four
     /// points inside what `.aspectFill` actually leaves, so a re-cut sheet moves
-    /// him rather than quietly walking his foot off the edge. Lands around 61.
+    /// him rather than quietly walking his foot off the edge. Lands around 61
+    /// with no inset; further right on a notched phone, in whichever of the two
+    /// landscape orientations puts the notch on this edge.
     ///
     /// He stays on it for the whole walk now that the ground moves instead of
     /// him, so the clearance no longer has to hold against a slide as well.
@@ -412,27 +458,26 @@ private enum Intro {
             + (IntroArt.manCentreXFraction - IntroArt.walkLeftFraction) * walkerSize.width
     }
 
-    /// The rabbit waits here: a clear nose ahead of the dog, which is where he
-    /// has to be for the moment to read as Benny spotting him rather than
-    /// tripping over him.
+    /// The rabbit waits here — far enough ahead that Benny spotting him and
+    /// giving chase reads as the beat, rather than a near miss the way a
+    /// tighter gap once staged it.
     ///
-    /// Far enough out that the drawn dog's nose at full stretch still doesn't
-    /// reach him — the sheet has Benny pulling a long way ahead of the man
-    /// before the leash goes, which puts that nose around 213 with the man
-    /// holding his mark.
+    /// Landscape's wide, uncropped scene already broke the old staging this
+    /// used to protect (see `stageIntro`'s "KNOWN LANDSCAPE REGRESSION": the
+    /// camera-pan reveal it was tuned against doesn't happen any more, since
+    /// he's in view from the first frame regardless of where this puts him),
+    /// so there's no tight budget left to spend here. What sets this now is
+    /// simply how far he has left to run once he breaks — see `rabbitAheadFraction`.
+    static var rabbitX: CGFloat { manX + rabbitAheadFraction * walkerSize.width }
+
+    /// How far ahead of the walker the rabbit sits, as a multiple of the
+    /// walker's own width.
     ///
-    /// Twenty points of air between him and the drawn dog's nose at full
-    /// stretch, which the sheet puts around 246 with the man on his mark. That
-    /// stretch is the handoff frame alone; the lunge he is actually reacting to
-    /// only reaches about 182, so through the approach the gap is four times
-    /// this.
-    ///
-    /// Which is the whole budget spent. Left of here and Benny's drawing runs
-    /// into him at the cut; right of here and the turf hasn't finished carrying
-    /// him into frame by the time Benny pulls. At 291 he is clear of the right
-    /// edge at 1.07s against the pull at 0.88s — a fifth of a second late, and
-    /// he has always been a little late.
-    static let rabbitX: CGFloat = 291
+    /// Pushed well out past the old portrait-derived 0.820, so that the run
+    /// he breaks into (see `handOff`) has meaningfully less ground to cover —
+    /// raising this is the one lever for that, since his run-off distance is
+    /// always measured live from wherever this actually places him.
+    static let rabbitAheadFraction: CGFloat = 1.8
 
     /// The first two of the three beats: out for a walk, then Benny leaning into
     /// the leash until it comes out of the man's hand. Eight frames, then nine.
@@ -494,16 +539,19 @@ private enum Intro {
     /// so the pull still reads as a reaction to seeing him.
     static var rabbitStartX: CGFloat { rabbitX + scrollSpeed * CGFloat(toHandoff) }
 
-    /// How fast he goes when he breaks, and for how long.
+    /// How fast he runs once he breaks, in the screen's own terms rather than
+    /// the camera's — he's peeled off the stage at that point (see `handOff`),
+    /// so this is his actual, literal ground speed, not a speed netted against
+    /// a moving world.
     ///
-    /// Against the camera, not the ground — which is the whole difference from
-    /// the old clip, where the world was standing still and any speed at all took
-    /// him off the edge. By the end of `pickUp` the shot is moving at
-    /// `openingSpeed` itself, so a rabbit at that speed would hang exactly where
-    /// he is and one below it would slide backwards into Benny's teeth. The
-    /// margin over it is what "getting away" is.
-    static var rabbitRunSpeed: CGFloat { Layout.openingSpeed * 1.3 }
-    static let rabbitBolt: TimeInterval = 1.05
+    /// A speed forced to cross the remaining distance in some fixed short time
+    /// looked wrong regardless of the number chosen: the gallop frames keep
+    /// their own cadence (`timePerFrame: 0.07` in `handOff`), so pushing the
+    /// translation speed up without it slides his legs against the ground —
+    /// he reads as skating, not sprinting. This is close to a normal running
+    /// pace instead, matched to the same gallop the rest of the game already
+    /// runs Benny at (`Layout.topSpeed`), so his legs and his travel agree.
+    static let rabbitRunSpeed: CGFloat = Layout.topSpeed
 
     /// Benny fading in over the drawing of himself, and then how long he takes
     /// to settle into the place he runs from.
@@ -539,13 +587,13 @@ private enum BackdropArt {
     /// where to take it from were found by sliding the source over itself —
     /// see the script, which prints how much better the join it chose is than
     /// the worst one available.
-    static let aspect: CGFloat = 0.9254
+    static let aspect: CGFloat = 1.9174
 
     /// Down from the top of the crop: the near and far edges of the grass, and
     /// the band of flat sky the two scrolling layers are cut at.
-    static let grassLineFraction: CGFloat = 0.7248
-    static let earthLineFraction: CGFloat = 0.7897
-    static let skySplitFraction: CGFloat = 0.5892
+    static let grassLineFraction: CGFloat = 0.5098
+    static let earthLineFraction: CGFloat = 0.6152
+    static let skySplitFraction: CGFloat = 0.3098
 
     /// How far down the grass everything stands. Nought is its near edge, one
     /// the lip of the cut earth.
@@ -589,6 +637,27 @@ private enum BackdropArt {
     /// One repeat, in scene points — and so how far the world travels before it
     /// comes round again.
     static var tileWidth: CGFloat { height * aspect }
+
+    /// How many copies of the repeat it takes to cover the scene at every point
+    /// in the scroll, rather than at most of them.
+    ///
+    /// Two was right in portrait and is wrong here, and the precondition the
+    /// old comment stated — "given a repeat wider than the screen" — is exactly
+    /// what landscape broke. The copies are laid end to end and wrap round each
+    /// other, so the pair reach only `tileWidth` right of the origin at the
+    /// moment before one wraps, never `2 * tileWidth`. Portrait had 1067
+    /// against a 400-wide scene and a repeat to spare; landscape has 667
+    /// against 800, so for a fifth of every cycle the last 133 units of the
+    /// scene had nothing painted over them and showed `Palette.field` — a flat
+    /// green slab down the right-hand edge, blinking in and out as the world
+    /// came round.
+    ///
+    /// Derived rather than bumped to three, because it follows `tileWidth`,
+    /// which follows `height`, which follows the scene and `groundTop`. Retune
+    /// either and this keeps up.
+    static var stripCount: Int {
+        max(2, Int((Layout.sceneSize.width / tileWidth).rounded(.up)) + 1)
+    }
 
     /// The bottom of the painting, and the seam between its two layers, in
     /// scene coordinates. Both fall out of standing the grass line on
@@ -735,7 +804,8 @@ private enum ObstacleArt {
     }
 
     static let log = Piece(
-        texture: load("obstacle_log"), heightRange: 59...76,
+        texture: load("obstacle_log"),
+        heightRange: (59 * Layout.worldScale)...(76 * Layout.worldScale),
         // Stops at the top of the cylinder, measured at 0.754 of the drawing.
         // It used to run to 0.94 because the sprig of leaves dragged the
         // measurement up with it, leaving a full-width slab of nothing above
@@ -745,7 +815,8 @@ private enum ObstacleArt {
     )
 
     static let bush = Piece(
-        texture: load("obstacle_bush"), heightRange: 70...92,
+        texture: load("obstacle_bush"),
+        heightRange: (70 * Layout.worldScale)...(92 * Layout.worldScale),
         // The one genuinely round obstacle. Least-squares fit over the
         // silhouette's upper edge gives radius 0.830 / centre 0.120; the radius
         // is pulled in to 0.80 so the disc sits inside the foliage rather than
@@ -761,7 +832,8 @@ private enum ObstacleArt {
     /// the stump has already tapered in. Taking the flare instead costs a good
     /// 15pt of the clearance a jump has to spare at the opening scroll speed.
     static let stump = Piece(
-        texture: load("obstacle_stump"), heightRange: 66...87,
+        texture: load("obstacle_stump"),
+        heightRange: (66 * Layout.worldScale)...(87 * Layout.worldScale),
         solid: .box(width: 0.64, height: 0.94, base: 0.02), offsetXFraction: 0
     )
 
@@ -780,7 +852,7 @@ private enum ObstacleArt {
     /// they only need to meet the turf rather than disappear into it — and
     /// every point of sink here makes the whole bench taller and wider, because
     /// the seat has to stay `duckClearance` above the turf regardless.
-    private static let benchSink: CGFloat = 6
+    private static let benchSink: CGFloat = 6 * Layout.worldScale
 
     /// Sized so the underside of the seat lands exactly on the clearance line,
     /// the sink into the turf included. The bench scales off the one number
@@ -815,7 +887,7 @@ private enum ObstacleArt {
     /// bolted metal rather than a skirt of grass, so they meet the turf instead
     /// of growing out of it, and every point of sink here would otherwise make
     /// the whole swingset taller and wider.
-    private static let swingsetSink: CGFloat = 6
+    private static let swingsetSink: CGFloat = 6 * Layout.worldScale
 
     /// Sized so the underside of the seats lands on the clearance line, exactly
     /// as `benchHeight` is. Comes out at 110pt tall and 247 wide — half again
@@ -865,17 +937,191 @@ private enum ObstacleArt {
     }
 }
 
+/// Where the cliff's three pieces come from. The one obstacle drawn from a
+/// cropped scene rather than an isolated sprite — the source mockup was a
+/// full background (two ledges, the drop between them, distant hills), not a
+/// cutout — so this holds three textures rather than `ObstacleArt.Piece`'s
+/// one. See `Cliff` for how they're sized and placed, and `makeCliff` for why
+/// this doesn't go through `ObstacleArt` at all.
+/// How the rare cliff set-piece is staged and gated. Not an obstacle with a
+/// physics box, unlike everything in `ObstacleArt` — the hazard is the
+/// ground itself going away for a beat, tracked here and enforced in
+/// `update`.
+///
+/// The gap is one painted sprite, `cliff_gap` — a crop of the notch out of
+/// the reference art, drawn in the same style and palette as `bg_scroll`
+/// itself (sampled both: bushes, turf and dirt match to within a few values
+/// each). Everything it's sized and placed by is measured off that crop, so
+/// a re-crop means updating the pixel figures below and nothing else.
+///
+/// Earlier versions built the gap out of live `BackdropArt.sheet` samples
+/// instead — hills glimpsed through it, then a darkened version of the same,
+/// then plain dirt, then dirt under a grass cap. All of them were trying to
+/// *add* something at turf height. What the art shows is the opposite: in a
+/// real gap the turf strip is simply **missing**, and what you see through it
+/// is the background bushes, with the dirt continuing across underneath.
+/// Covering grass with more grass is why the last version had no visible gap
+/// at all.
+private enum Cliff {
+    /// `cliff_gap.png` (247×135), measured: how wide the crop is, how wide
+    /// the opening inside it is, the turf band's thickness beside it, and
+    /// the crop's full height. Printed by `Art/CutCliffGap.swift`, which cuts
+    /// the asset as well — so a repainted gap is a rerun and a paste. It finds
+    /// the rows with the same detectors `Art/CropBackground.swift` uses for
+    /// `bg_scroll` itself, so the two sets of figures are comparable.
+    ///
+    /// The crop is cut to the game's proportions, not the art's own. Its top
+    /// edge is the turf line exactly — deliberately not a pixel higher.
+    /// An earlier version reached ~29 units further up to cover the real
+    /// ground's tuft rise, and in doing so painted a flat, static patch over
+    /// the live scrolling bushes, which is what kept reading as wrong
+    /// through every attempt at this. Above the turf line the real
+    /// background now shows through the gap, which matches by definition
+    /// because it *is* the background. It stops as far below the dirt line
+    /// as the real dirt band is deep (~28 units) — the reference art draws a
+    /// far thicker dirt layer than this game's ground has, and cropping its
+    /// full depth left the pit hanging well past where the real dirt ends.
+    ///
+    /// Its sides reach *past* the opening on purpose, and this is the whole
+    /// difference between reading as a cliff and reading as a notch. The
+    /// art's turf rolls over each lip and drops into a shaded cut face, and
+    /// the crop reaches past both faces to carry them. An earlier crop trimmed
+    /// to just inside the turf to avoid bringing foreign grass in — which cut
+    /// off both lips exactly, leaving a turf notch with flat dirt behind it
+    /// and no cliff at all.
+    static let spritePx: CGFloat = 537
+    static let gapPx: CGFloat = 445
+    static let turfBandPx: CGFloat = 97
+    static let cropHeightPx: CGFloat = 463
+
+    /// Scene units per pixel of that crop, fixed by making its turf band
+    /// land exactly on the game's own — which is what keeps the art's turf
+    /// line and dirt line flush with the real ground either side of it.
+    static var artScale: CGFloat { (grassRise - pitRise) / turfBandPx }
+
+    /// How much of each end of the crop is lip and cut face, and so has to be
+    /// drawn at native scale however wide the opening is — see `makeCliffPit`,
+    /// which slices the sprite into these two caps and a stretched middle.
+    ///
+    /// Found by `Art/CutCliffGap.swift` rather than eyed: the first column, in
+    /// from each end, whose colour above the dirt line has settled onto the
+    /// interior's own, plus a few pixels of margin.
+    static let capPx: CGFloat = 52
+
+    /// How many rows at the top of the crop fade in rather than starting
+    /// opaque, and so how far above the turf line the sprite's top edge sits.
+    ///
+    /// The sprite still covers the ground's turf from the turf line down; it
+    /// just arrives gradually. Stopping flat on the line put its first painted
+    /// row against an unrelated stretch of the backdrop's bush line and drew a
+    /// straight edge across the scenery. See `Art/CutCliffGap.swift`.
+    static let fadePx: CGFloat = 12
+
+    /// Where the sprite's top edge goes: the turf line, raised by the fade.
+    static var fadeRise: CGFloat { grassRise + fadePx * artScale }
+
+    /// How far the sprite reaches *past* the opening, total — the ledge it
+    /// carries on each side, which overlaps the real ground. Fixed by the art
+    /// and so unaffected by how wide the opening is made.
+    static var lipOverhang: CGFloat { (spritePx - gapPx) * artScale }
+
+    /// How early a player may jump and still land clear.
+    ///
+    /// This is the difficulty knob: the gap is sized from it rather than the
+    /// other way round. The gap used to follow the art at 1:1 — 113 units,
+    /// against the 259 a jump covers at the speed cliffs used to unlock at,
+    /// which left over half a second of slack and meant an early jump could
+    /// never actually fall short.
+    static let clearance: TimeInterval = 0.21
+
+    /// The widest opening `bg_scroll` can hold. Not chosen — measured.
+    ///
+    /// The sprite stops on the turf line, so the real ground shows above it and
+    /// the turf's own sprigs would otherwise stand over the hole with nothing
+    /// under them. `cliffSpawnX` puts the gap where they don't, and this is as
+    /// wide as the stretches it has to choose from allow — with room to spare
+    /// inside them rather than filling them exactly, since a gap that only just
+    /// fits leaves a window a few pixels wide to aim at.
+    ///
+    /// It was briefly 280, the width at which the timing stays constant at every
+    /// speed, bought by covering the sprigs with a band of the gap painting's
+    /// own haze. That band read as a patch laid over the scenery, worst of all
+    /// mid-jump with Benny up beside it, so the width went back to what
+    /// placement alone can keep clean.
+    static let maxGapWidth: CGFloat = 170
+
+    /// The sprite's drawn height. Its top edge goes straight on the turf
+    /// line, since that's exactly where the crop starts.
+    static var pitHeight: CGFloat { cropHeightPx * artScale }
+
+    /// How far above `Layout.groundTop` the turf line sits, and so where the
+    /// sprite's own top edge goes.
+    ///
+    /// Not a guess: `Layout.groundTop` isn't the top of the grass, it's
+    /// `BackdropArt.standFraction` (half) of the way *through* it — the same
+    /// derivation `BackdropArt.anchorFraction` itself uses — so the true
+    /// grass line sits this far above it:
+    static let grassRise: CGFloat = BackdropArt.landSize.height
+        * (BackdropArt.anchorFraction - BackdropArt.grassLineFraction) / (1 - BackdropArt.skySplitFraction)
+
+    /// How far above `Layout.groundTop` the dirt begins — negative, since
+    /// this is below the grass, not at it. Same derivation as `grassRise`,
+    /// off the earth line instead of the grass line. Only used to size
+    /// `artScale`; the sprite itself is placed from `grassRise`.
+    static let pitRise: CGFloat = BackdropArt.landSize.height
+        * (BackdropArt.anchorFraction - BackdropArt.earthLineFraction) / (1 - BackdropArt.skySplitFraction)
+
+    /// Spawns a cliff at every opportunity instead of rarely, for looking at
+    /// the gap without having to play for one.
+    ///
+    /// Ships `false`. One switch rather than the handful of scattered edits
+    /// this used to take — those had to be hunted down and undone by hand
+    /// every time, and once shipped a run where cliffs never spawned again.
+    ///
+    /// It lifts the two gates that make a cliff *rare*, and deliberately not
+    /// the one that keeps the feature honest: `activeCliff` still allows only
+    /// one at a time, and the gap is still sized from the speed it spawns at,
+    /// so what turns up is a real cliff and not a debug approximation of one.
+    static let debugSpawnAlways = false
+
+    /// How many points of score have to pass between cliffs, so they read as
+    /// a rare event rather than clustering.
+    ///
+    /// This is the only thing pacing them now. There used to be a `gameSpeed`
+    /// floor as well, to keep a gap from spawning at a speed that couldn't
+    /// clear it — `cliffGapWidth(at:)` guarantees that by construction now,
+    /// and leaving the floor in would have pinned every gap to `maxGapWidth`
+    /// and made the sizing inert.
+    static let scoreCooldown = 5
+
+    /// The clean beat after a cliff, on top of the time the gap itself takes
+    /// to pass. Nothing should spawn crowding a gap — it needs a clear
+    /// sightline, not a log stacked against it. See `spawnObstacle`, which
+    /// adds the gap's own crossing time and the spawn nudge to this.
+    static let postSpacing: TimeInterval = 0.9
+
+    /// How far below the ground line counts as having fallen through, rather
+    /// than mid-jump. Short on purpose: at top speed there's barely more time
+    /// to cross the gap than to fall this far, so it has to resolve before
+    /// the ground would otherwise reconnect underneath him.
+    static let fallDeath: CGFloat = 40
+}
+
 /// What is still drawn rather than painted. The sky, the hills and the turf
 /// used to be here too, and are in `bg_scroll` now.
 private enum Palette {
     static let ink = SKColor(red: 0.16, green: 0.20, blue: 0.24, alpha: 1)
-    static let sun = SKColor(red: 1.0, green: 0.87, blue: 0.35, alpha: 1)
     static let log = SKColor(red: 0.60, green: 0.40, blue: 0.24, alpha: 1)
     static let hound = SKColor(red: 0.98, green: 0.96, blue: 0.92, alpha: 1)
 
     /// Sampled from the bottom of the painting, so anything showing behind it
-    /// is the same field it is.
-    static let field = SKColor(red: 0.40, green: 0.57, blue: 0.18, alpha: 1)
+    /// is the same ground it is.
+    ///
+    /// Dirt, not grass. The painting this was named for ended in a green apron
+    /// below the cut earth; the one that replaced it runs dirt all the way down,
+    /// which is what lets the cliff gap fall away instead of stopping at a
+    /// depth someone had to choose.
+    static let field = SKColor(red: 0.34, green: 0.19, blue: 0.08, alpha: 1)
 }
 
 // MARK: - Scene
@@ -890,6 +1136,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// Distinct from what `makeGround` returns, which is the floor's physics and
     /// nothing else — one is what you see, the other is what Benny stands on.
     private var land: SKNode!
+    /// The floor's physics, and nothing else — see `land`. Held onto so a
+    /// cliff can switch it off for the width of its gap; `build()` used to
+    /// hand this straight to `addChild` and let it go.
+    private var ground: SKNode!
 
     // State
     private(set) var score = 0
@@ -980,6 +1230,20 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var lastUpdateTime: TimeInterval = 0
     private var gameSpeed: CGFloat = Layout.openingSpeed
 
+    /// The one cliff on screen, if any — there is never more than one, being
+    /// rare. `update` reads its live position every frame to know whether
+    /// `Layout.dogX` currently sits inside the gap; `spawnObstacle` uses this
+    /// to keep from spawning a second one before the first has scrolled off.
+    private weak var activeCliff: SKNode?
+    /// How wide `activeCliff`'s opening came out. Cliffs aren't all the same
+    /// width any more — each is sized from the speed it spawned at, by
+    /// `cliffGapWidth(at:)` — so the number `update` tests `Layout.dogX`
+    /// against has to travel with the cliff rather than being a constant.
+    private var activeCliffGap: CGFloat = 0
+    /// The score the last cliff was spawned at, so `Cliff.scoreCooldown`
+    /// has something to measure from.
+    private var lastCliffScore = 0
+
     /// Reported so SwiftUI can draw the score and persist a best.
     var onScoreChange: ((Int) -> Void)?
     var onGameOver: ((Int) -> Void)?
@@ -995,6 +1259,15 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Setup
 
     override func didMove(to view: SKView) {
+        // Read once, before `build()` stages the opening clip against it. The
+        // scene fills the view's width exactly (see `Layout.visibleInset`), so
+        // that same ratio converts the device's own safe-area inset into scene
+        // units — the `> 0` guard is only for a view handed to us before it has
+        // a real width, and falls back to the old, un-inset answer.
+        let insetPoints = view.safeAreaInsets.left
+        let scale = view.bounds.width / Layout.sceneSize.width
+        Layout.visibleInset = scale > 0 ? insetPoints / scale : 0
+
         physicsWorld.gravity = CGVector(dx: 0, dy: -9)
         physicsWorld.contactDelegate = self
         // Input is handled by `touchesBegan` rather than a gesture recognizer
@@ -1012,9 +1285,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         scenery = SKNode()
         addChild(scenery)
         addBackdrop()
-        addChild(makeSun())
 
-        addChild(makeGround())
+        ground = makeGround()
+        addChild(ground)
         dog = makeDog()
         addChild(dog)
 
@@ -1057,32 +1330,15 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
-    /// Two copies of one repeat, laid end to end.
-    ///
-    /// Two is all a seamless scroll needs, given a repeat wider than the screen:
-    /// there is never a moment when a third would be showing.
+    /// Copies of one repeat, laid end to end — as many as it takes to cover the
+    /// scene however they happen to have wrapped. See `BackdropArt.stripCount`.
     private func strips(_ texture: SKTexture, size: CGSize, y: CGFloat) -> [SKSpriteNode] {
-        (0..<2).map { index in
+        (0..<BackdropArt.stripCount).map { index in
             let strip = SKSpriteNode(texture: texture, size: size)
             strip.anchorPoint = .zero
             strip.position = CGPoint(x: CGFloat(index) * size.width, y: y)
             return strip
         }
-    }
-
-    /// Added to the scene rather than to a backdrop sprite. A sprite's children
-    /// are positioned from its centre, so scene coordinates would land it
-    /// off-frame — and it would ride the sky's drift rather than hanging still.
-    private func makeSun() -> SKNode {
-        let sun = SKShapeNode(circleOfRadius: 42)
-        sun.fillColor = Palette.sun
-        sun.strokeColor = Palette.ink
-        sun.lineWidth = Layout.outline
-        // Kept clear of the top strip, where SwiftUI draws the score — dark text
-        // over the sun's yellow reads badly.
-        sun.position = CGPoint(x: 300, y: 555)
-        sun.zPosition = -90
-        return sun
     }
 
     /// Scrolls a node left forever, wrapping it round by `width`.
@@ -1389,6 +1645,23 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         2 * launchVelocity / gravityAcceleration
     }
 
+    /// How wide a cliff spawning right now should be.
+    ///
+    /// Crossing a gap of width `w` at speed `s` takes `w / s` of the jump, so
+    /// what's left over — `airtime - w / s` — is how early a player may leave
+    /// the ground and still land clear. Sizing the gap to hold that at
+    /// `Cliff.clearance` is what makes every cliff both clearable by
+    /// construction and worth timing, at whatever speed it turns up.
+    ///
+    /// It caps rather than growing forever: `maxGapWidth` is as wide an
+    /// opening as the backdrop can hold. Past roughly 280 the cap binds and
+    /// the slack starts widening again — a fixed jump arc against a fixed gap
+    /// is always easier the faster you're going, and the cap is where that
+    /// takes back over.
+    private func cliffGapWidth(at speed: CGFloat) -> CGFloat {
+        min(Cliff.maxGapWidth, speed * (airtime - Cliff.clearance))
+    }
+
     /// Squash and stretch. Cheap, and it does more for the cartoon feel than any
     /// amount of detail in the shapes themselves.
     private func squash(xScale: CGFloat, yScale: CGFloat) {
@@ -1427,6 +1700,36 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Obstacles
 
     private func spawnObstacle() {
+        // The rare one: a gap Benny has to clear by jumping across rather than
+        // over — see `Cliff`. There's no speed gate, because it doesn't need
+        // one: the gap is *sized* from the speed it spawns at
+        // (`cliffGapWidth(at:)`), so one can never turn up too wide to clear.
+        // Up to the speed where `maxGapWidth` takes over it also arrives with
+        // the same slack every time; past that the cap binds and a fast run
+        // gets an easier gap than a slow one.
+        //
+        // `activeCliff` keeps a second one from spawning before the first has
+        // scrolled off, and `lastCliffScore` keeps them from clustering.
+        let wantsCliff = activeCliff == nil
+            && (Cliff.debugSpawnAlways
+                || (score - lastCliffScore >= Cliff.scoreCooldown && Int.random(in: 0..<10) < 1))
+        if wantsCliff {
+            let gap = cliffGapWidth(at: gameSpeed)
+            let spawnX = cliffSpawnX()
+            let cliff = makeCliff(gap: gap)
+            cliff.position = CGPoint(x: spawnX, y: Layout.groundTop)
+            cliff.zPosition = 8
+            cliff.name = "obstacle"
+            addChild(cliff)
+            activeCliff = cliff
+            activeCliffGap = gap
+            lastCliffScore = score
+            // Three parts: how long the gap itself takes to pass, how long the
+            // spawn nudge delays its arrival, and the clean beat after it.
+            obstacleTimer -= (gap + spawnX - Layout.spawnX) / gameSpeed + Cliff.postSpacing
+            return
+        }
+
         // Ducks stay the minority — ducking is the newer verb, and a run that's
         // mostly ducking loses the rhythm of jumping. They also hold off until a
         // few obstacles in, so the first thing anyone meets is a jump.
@@ -1447,16 +1750,136 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         } else {
             obstacle = makeObstacle(ObstacleArt.jumps.randomElement() ?? ObstacleArt.log)
         }
-        obstacle.position = CGPoint(x: Layout.sceneSize.width + 60, y: Layout.groundTop)
+        obstacle.position = CGPoint(x: Layout.spawnX, y: Layout.groundTop)
         obstacle.zPosition = 8
         obstacle.name = "obstacle"
         addChild(obstacle)
+        // Moved and eventually removed by `update`, on the same per-frame step
+        // the ground scrolls by — see the comment there for why this isn't a
+        // one-shot action timed to `gameSpeed` at spawn.
+    }
 
-        let travel = Layout.sceneSize.width + 160
-        obstacle.run(.sequence([
-            .moveBy(x: -travel, y: 0, duration: TimeInterval(travel / gameSpeed)),
-            .removeFromParent(),
-        ]))
+    /// The one obstacle that isn't a solid prop: a gap in the ground, with no
+    /// physics body at all. Deliberately not routed through
+    /// `makeObstacle`/`Self.obstacleBody` — that would give it a real
+    /// `obstacle` contact and end the run just for scrolling past it. The
+    /// actual hazard lives in `update`, which pulls the ground itself out
+    /// from under Benny while `Layout.dogX` sits inside the gap.
+    ///
+    /// No ledge sprites either, on either side — an earlier version drew
+    /// two, cropped from the user's mockup, and they never stopped looking
+    /// like a seam against the real ground either side of them, because
+    /// they're a different painting. The real scrolling `land` layer already
+    /// renders correct, matching ground everywhere on screen, including
+    /// exactly where those ledges sat — so the fix is to draw nothing there
+    /// and let it show through. All that's actually missing, that the real
+    /// ground has no art for, is the gap itself — see `makeCliffPit`.
+    private func makeCliff(gap: CGFloat) -> SKNode {
+        let node = SKNode()
+        for piece in makeCliffPit(gap: gap) { node.addChild(piece) }
+        return node
+    }
+
+    /// Where to put a cliff so the ground's own turf sprigs don't end up
+    /// standing inside the gap with nothing under them.
+    ///
+    /// Since the sprite stops at the turf line, the real background shows
+    /// through the opening — sprigs included, and a sprig hanging in mid-air
+    /// over the hole reads as a glitch. But the sprigs sit at fixed places in
+    /// `bg_scroll`, and a cliff holds its position against the backdrop for
+    /// life (both are moved by the same per-frame `step`), so where the gap
+    /// lands in the repeat at spawn is where it stays. Picking that spot is
+    /// enough to avoid them entirely.
+    ///
+    /// Rather than wait for the backdrop to come round to a clear stretch —
+    /// which would make cliffs rarer and bunch them at the same scenery — this
+    /// nudges the spawn point right until the gap lands in one. It spawns off
+    /// screen either way, so the only effect is arriving up to half a repeat
+    /// later.
+    private func cliffSpawnX() -> CGFloat {
+        let tile = BackdropArt.tileWidth
+        guard let strip = land.children.first else { return Layout.spawnX }
+
+        /// Where a scene-x falls in the backdrop's repeat, as a fraction.
+        /// Any strip serves — `scrollLand` keeps them a whole `tile` apart.
+        func phase(_ sceneX: CGFloat) -> CGFloat {
+            let raw = (sceneX - strip.position.x) / tile
+            let mod = raw.truncatingRemainder(dividingBy: 1)
+            return mod < 0 ? mod + 1 : mod
+        }
+
+        // Measured off `bg_scroll.png` by `Art/MeasureTurfWindows.swift`: for
+        // each column, how far turf reaches above the turf line, then every
+        // window a `Cliff.maxGapWidth` opening fits into holding nothing
+        // taller than 4px (~2.5 units). Each is about 12 units wide.
+        //
+        // However many the painting happens to have, at whatever spacing. This
+        // used to be a single number taken mod half a repeat, which worked only
+        // because this particular painting has two windows exactly half a
+        // repeat apart — nothing makes that true of the next one.
+        //
+        // Measured at the *widest* gap on purpose, and used for every gap. A
+        // narrower one centred on the same spot sits strictly inside the span
+        // that was checked, so these cover the whole range of widths
+        // `cliffGapWidth(at:)` produces.
+        //
+        // Nine units of window means the nominal spawn point is almost never
+        // already in one, so this snaps to the nearest ahead rather than
+        // testing first. The nudge is off screen either way, and paid back into
+        // `obstacleTimer` by `spawnObstacle`.
+        let clearCentres: [CGFloat] = [0.0760, 0.5760]
+
+        let here = phase(Layout.spawnX)
+        let ahead = clearCentres
+            .map { centre -> CGFloat in
+                let d = centre - here
+                return d < 0 ? d + 1 : d
+            }
+            .min() ?? 0
+        return Layout.spawnX + ahead * tile
+    }
+
+    /// The gap itself: the `cliff_gap` crop — turf missing, background bushes
+    /// showing through where it was, dirt carrying on underneath, and the cut
+    /// edges the real ground has no art for.
+    ///
+    /// Its *height* is 1:1 and has to be: the crop's turf band is scaled to
+    /// match the game's (see `Cliff.artScale`), which is what lands its turf
+    /// line and its dirt line flush on the real ground's own either side.
+    ///
+    /// Its width isn't, because the opening is sized from the jump rather than
+    /// from the art — so it comes out in three pieces. The lip and cut face at
+    /// each end stay at native scale, since those are the shapes that read as a
+    /// cliff and a stretched one reads as a smear; only the middle takes up the
+    /// slack. That is safe here, and it's the art that makes it safe rather
+    /// than luck: across the middle, the shadow above the dirt line is flat to
+    /// within a couple of levels and the dirt below it is a soft gradient, so
+    /// there's no brushwork in there to distort. Stretch is about 1.9x at the
+    /// widest.
+    private func makeCliffPit(gap: CGFloat) -> [SKNode] {
+        guard let sheet = UIImage(named: "cliff_gap").map(SKTexture.init(image:)) else { return [] }
+
+        let capU = Cliff.capPx / Cliff.spritePx
+        let capWidth = Cliff.capPx * Cliff.artScale
+        let half = (gap + Cliff.lipOverhang) / 2
+        let height = Cliff.pitHeight
+
+        /// One slice, cut from `sheet` and stood with its top edge on the turf
+        /// line. `anchorX` places it by whichever of its own edges has to land
+        /// exactly: the outside edge for the caps, the centre for the middle.
+        func slice(u: CGFloat, width uWidth: CGFloat, drawn: CGFloat, anchorX: CGFloat, at x: CGFloat) -> SKSpriteNode {
+            let texture = SKTexture(rect: CGRect(x: u, y: 0, width: uWidth, height: 1), in: sheet)
+            let sprite = SKSpriteNode(texture: texture, size: CGSize(width: drawn, height: height))
+            sprite.anchorPoint = CGPoint(x: anchorX, y: 1)
+            sprite.position = CGPoint(x: x, y: Cliff.fadeRise)
+            return sprite
+        }
+
+        return [
+            slice(u: 0, width: capU, drawn: capWidth, anchorX: 0, at: -half),
+            slice(u: capU, width: 1 - 2 * capU, drawn: 2 * (half - capWidth), anchorX: 0.5, at: 0),
+            slice(u: 1 - capU, width: capU, drawn: capWidth, anchorX: 1, at: half),
+        ]
     }
 
     /// One of the painted jump obstacles, at a random height within its own
@@ -1628,18 +2051,22 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         stage.addChild(rabbit)
         introRabbit = rabbit
 
-        // He has to be off-stage when the clip opens, and where "off-stage"
-        // begins depends on the phone: a 19.5:9 screen stops at 383, the SE
-        // shows all 400. His start is derived from how long the walk takes
-        // rather than chosen, so this can't be arranged by moving him — it is
-        // a check that the numbers it *is* derived from still put him past the
-        // edge, and the SE is the shape it fails on first.
-        assert(
-            rabbit.position.x - rabbit.anchorPoint.x * rabbit.size.width >= Layout.widestVisible,
-            "the grazing rabbit starts on screen: his left edge is "
-                + "\(rabbit.position.x - rabbit.anchorPoint.x * rabbit.size.width), "
-                + "which is inside \(Layout.widestVisible)"
-        )
+        // KNOWN LANDSCAPE REGRESSION — he now starts in view.
+        //
+        // In portrait he began off the right of the scene and the travelling
+        // shot carried him in. That cannot happen at 800 wide: his mark is at
+        // 220 and the walk only travels 112 before the leash goes, so starting
+        // him past the edge would need five times the ground the drawn stride
+        // actually covers. He is simply sitting in the grass from the first
+        // frame, in frame.
+        //
+        // The beat still reads — he grazes, Benny notices him, the leash goes —
+        // but the reveal is gone, and the clip wants restaging for the wider
+        // shot: a longer walk, or a composition that opens on him.
+        //
+        // The assertion that guarded the off-stage start is removed rather than
+        // weakened, because it guarded an invariant this spike knowingly
+        // breaks, and an assert that cannot hold is worse than none.
     }
 
     /// Starts the clip running. Everything it moves is already on screen; this
@@ -1752,11 +2179,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             .run(.moveBy(x: 24, y: 0, duration: Intro.aloneFrame * 2))
 
         // And the rabbit, who has been sitting on the mark waiting for exactly
-        // this, breaks. He is inside the stage, and the stage now rides the turf,
-        // so the distance he is given here is ground covered rather than screen
-        // crossed — which is what lets `rabbitRunSpeed` be stated against the
-        // speed of the chase.
-        if let rabbit = introRabbit {
+        // this, breaks. He is peeled off the stage first — see below — so his
+        // sprint is real screen distance, run to completion on his own clock,
+        // rather than ground covered while riding along with a clip that tears
+        // itself down out from under him.
+        if let rabbit = introRabbit, let stage = intro {
             // A different sheet, so the size and the anchor go with the frames:
             // the gallop is drawn longer and lower than the rabbit sitting up in
             // the grass, and `grazeSize` and `rabbitSize` are what keep the two
@@ -1765,13 +2192,31 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             rabbit.size = Intro.rabbitSize
             rabbit.anchorPoint = CGPoint(x: 0.5, y: 0)
             rabbit.run(.repeatForever(.animate(with: IntroArt.rabbitFrames, timePerFrame: 0.07)))
+
+            // Handed from the stage to the scene itself, at the same spot he
+            // already occupies. `finishIntro` only tears down `intro` — once
+            // he's no longer inside it, that cut can't reach him, and he's free
+            // to finish his own sprint on his own schedule, on or off screen,
+            // whether the clip ends around him or is skipped out from under him.
+            let scenePosition = stage.convert(rabbit.position, to: self)
+            rabbit.removeFromParent()
+            rabbit.position = scenePosition
+            rabbit.zPosition = stage.zPosition  // "over the turf, under Benny" — lost by leaving the stage otherwise
+            addChild(rabbit)
+
+            // However far is actually left to clear the edge, plus his own
+            // width so it's his trailing edge that clears it, not his centre —
+            // the same reasoning the scrolling obstacles use for their own
+            // `+160` margin. Measured live rather than assumed, so a wider
+            // notch inset (which starts him further right) doesn't leave him
+            // clipped mid-screen.
+            let clearRight = Layout.sceneSize.width - scenePosition.x + rabbit.size.width
             let bolt = SKAction.moveBy(
-                x: Intro.rabbitRunSpeed * CGFloat(Intro.rabbitBolt), y: 0,
-                duration: Intro.rabbitBolt
+                x: clearRight, y: 0,
+                duration: TimeInterval(clearRight / Intro.rabbitRunSpeed)
             )
-            // A standing start, but only just: the ground is accelerating under
-            // him from this frame, and a longer ease would have it out-run him
-            // for the first tenth and drag him backwards as he sets off.
+            // A standing start: anything bolting from rest accelerates rather
+            // than snapping straight to top speed.
             bolt.timingMode = .easeIn
             rabbit.run(.sequence([bolt, .removeFromParent()]))
         }
@@ -1875,12 +2320,53 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // game proper and waits for the first tap.
         guard hasStarted else { return }
 
+        // The same step the ground moves by, not a one-shot action timed to
+        // whatever `gameSpeed` was at spawn — `gameSpeed` climbs over the
+        // course of a run, and an obstacle that kept its spawn-time pace for
+        // its whole life would drift out of sync with the ground (and with
+        // every obstacle spawned after it) as the run sped up around it.
+        // -200 clears the scene's left edge with room to spare, the same
+        // margin `spawnObstacle` used to travel before removing itself.
+        enumerateChildNodes(withName: "obstacle") { node, _ in
+            node.position.x -= step
+            if node.position.x < -200 { node.removeFromParent() }
+        }
+
+        // The one hazard that isn't a contact. A cliff carries no physics
+        // body — see `makeCliff` — so whether Benny is over its gap is worked
+        // out fresh every frame from its live position, and the ground
+        // itself is what answers: switched off for the width of the gap,
+        // switched back on once it's scrolled past. Forced rather than left
+        // to `didBegin`/`didEnd`, both of which key off contacts that a
+        // category mutated out from under them isn't guaranteed to report
+        // cleanly.
+        if let cliff = activeCliff {
+            let halfGap = activeCliffGap / 2
+            if Layout.dogX > cliff.position.x - halfGap && Layout.dogX < cliff.position.x + halfGap {
+                ground.physicsBody?.categoryBitMask = 0
+                isOnGround = false
+                // A duck in progress would otherwise keep sliding through
+                // turf that is no longer there to slide on.
+                if isSliding { endSlide() }
+            } else {
+                ground.physicsBody?.categoryBitMask = PhysicsCategory.ground
+            }
+        }
+
+        // Falling through a cliff's gap is a fourth way to end a run,
+        // alongside the physics contact `didBegin` already handles — there is
+        // no contact here to catch it, so it's caught by how far down he's
+        // gotten instead. Short on purpose: see `Cliff.fallDeath`.
+        if !isGameOver, dog.position.y < Layout.dogGroundLine - Cliff.fallDeath {
+            endGame()
+        }
+
         obstacleTimer += delta
         if obstacleTimer >= obstacleInterval {
             obstacleTimer -= obstacleInterval
             spawnObstacle()
             // The floor is held above both the airtime and the slide, not
-            // chosen for pacing: at the top scroll speed a jump covers 454pt
+            // chosen for pacing: at the top scroll speed a jump covers ~364pt
             // and a slide 400pt, so a tighter gap than this would run one
             // obstacle into the next with no ground time to react in between.
             // It has had to climb every time Benny has grown.
@@ -1897,7 +2383,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let tile = BackdropArt.tileWidth
         for strip in land.children {
             strip.position.x -= distance
-            if strip.position.x <= -tile { strip.position.x += tile * 2 }
+            if strip.position.x <= -tile {
+                strip.position.x += tile * CGFloat(BackdropArt.stripCount)
+            }
         }
     }
 
@@ -2079,31 +2567,20 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         lastUpdateTime = 0
         physicsWorld.speed = 1
 
+        // Both of these are what `spawnObstacle` gates cliffs on, and a run
+        // that ends having spawned one leaves them saying so. Without the
+        // reset, `score - lastCliffScore` starts the next run negative — by
+        // however far the last run got — and no cliff can spawn until the
+        // score climbs back past it, which for a good run is the whole of the
+        // next one. `activeCliff` is weak and would clear itself once
+        // `removeAllChildren` let the node go, but that leans on when ARC
+        // happens to release it rather than saying what's meant.
+        lastCliffScore = 0
+        activeCliff = nil
+        activeCliffGap = 0
+
         onScoreChange?(0)
         onRetry?()
         build()
-    }
-
-    // MARK: - Helpers
-
-    /// A vertical two-stop gradient. `SKShapeNode` can't fill with one, so it is
-    /// drawn once into a texture.
-    private static func gradientTexture(from bottom: SKColor, to top: SKColor, size: CGSize) -> SKTexture {
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { context in
-            let colors = [bottom.cgColor, top.cgColor] as CFArray
-            guard let gradient = CGGradient(
-                colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                colors: colors,
-                locations: [0, 1]
-            ) else { return }
-            context.cgContext.drawLinearGradient(
-                gradient,
-                start: CGPoint(x: 0, y: size.height),
-                end: CGPoint(x: 0, y: 0),
-                options: []
-            )
-        }
-        return SKTexture(image: image)
     }
 }

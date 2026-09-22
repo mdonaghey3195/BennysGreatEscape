@@ -45,6 +45,33 @@ private let interesting: [(Int, Int)] = [(200, 900), (1040, 1470)]
 /// match by luck; twenty-five of them in a row cannot.
 private let joinWidth = 12
 
+/// How much worse than ordinary brushwork the finished tile's own wrap may be
+/// before this refuses to install it.
+///
+/// The crop is laid end to end with itself forever, so its last column sits
+/// against its first. If those two disagree by more than neighbouring columns
+/// normally do, the world shows a vertical line every time the repeat comes
+/// round — which at a typical tile width is every few seconds.
+///
+/// Not a delicate number. A painting that genuinely repeats scores about 1.2x
+/// its own column-to-column variation; a handsome one-off scene that simply
+/// doesn't tile — which is what prompted this check — scored 8.8x overall and
+/// 40x in the sky. There is nothing in between to agonise over.
+private let wrapTolerance = 2.5
+
+/// How far apart the two columns have to actually be, in levels out of 255,
+/// before `wrapTolerance` is allowed to have an opinion.
+///
+/// A ratio on its own is unfair to the smooth bands. The hills in the shipped
+/// painting vary by about one level between neighbours, so a wrap of two levels
+/// reads as 2.1x and trips a tolerance meant for real seams — when two levels
+/// out of 255 is nothing anyone will ever see. A band has to fail both tests.
+///
+/// The two paintings measured so far do not come close to meeting in here: the
+/// worst band of the one that tiles is 3.4 levels, the best band of the one that
+/// doesn't is 6.5.
+private let wrapFloor = 5.0
+
 /// How far a sky pixel can sit from its row's true colour and still be a
 /// blemish rather than a cloud, and how far it has to sit to be cloud.
 ///
@@ -128,12 +155,24 @@ private func difference(_ sheet: Bitmap, _ a: Int, _ b: Int, rows: [Int]) -> Dou
     return Double(total) / Double(rows.count * 3)
 }
 
-/// The lag at which the image most looks like itself.
+/// The lag at which the image most looks like itself, if it holds a repeat at
+/// all.
 ///
 /// Slid over itself and scored at every offset, the artwork's own period falls
 /// out as a clear minimum rather than a tie — and the curve either side of it is
 /// smooth, which is what says it is one real repeat and not a coincidence.
-private func period(of sheet: Bitmap, rows: [Int]) -> Int {
+///
+/// `nil` when the source is too narrow to hold two copies of anything, which is
+/// how a source that is *already* one seamless tile arrives. There is no need to
+/// find a repeat in that case, and no way to: the whole image is the repeat.
+/// Either way `verifyWrap` has the last word on whether the result actually
+/// tiles, so trusting a source here costs nothing.
+private func period(of sheet: Bitmap, rows: [Int]) -> Int? {
+    guard sheet.width >= 2 * shortestPeriod else {
+        print("  \(sheet.width)px is too narrow to hold a repeat of \(shortestPeriod)+ —"
+            + " taking the source as one tile")
+        return nil
+    }
     var best = (cost: Double.infinity, lag: 0)
     var curve: [(Int, Double)] = []
     for lag in stride(from: shortestPeriod, through: sheet.width - shortestPeriod, by: 1) {
@@ -172,6 +211,69 @@ private func offset(in sheet: Bitmap, period: Int, rows: [Int]) -> Int {
     print("  offset \(best.x)px  (join \(fmt(best.cost)); the worst offset,"
         + " \(worst.x), would have cost \(fmt(worst.cost)))")
     return best.x
+}
+
+// MARK: - Checking it actually tiles
+
+/// Refuses to install a crop whose last column doesn't sit happily against its
+/// first, band by band.
+///
+/// Band by band and not overall, because the bands fail differently and an
+/// average hides it: a mismatched sky is a hard line drawn through flat colour
+/// and shows at a fraction of what the same number would mean down in the dirt,
+/// where the paint is busy enough to swallow it. Each band is therefore judged
+/// against its own ordinary column-to-column variation rather than a fixed
+/// figure.
+///
+/// This is the one thing about the backdrop that cannot be noticed by looking
+/// at the source: a painting can be lovely, and the right size, and the right
+/// palette, and still not tile.
+private func verifyWrap(_ crop: Bitmap, sky: Int, grass: Int, earth: Int) {
+    let bands = [("sky", 0, sky), ("hills", sky, grass), ("turf", grass, earth),
+                 ("dirt", earth, crop.height)]
+    var failed: [String] = []
+
+    for (name, top, bottom) in bands where bottom > top {
+        var seam = 0.0
+        var inner = 0.0
+        for y in top..<bottom {
+            let first = crop.offset(0, y), last = crop.offset(crop.width - 1, y)
+            for channel in 0..<3 {
+                seam += abs(Double(crop.pixels[last + channel]) - Double(crop.pixels[first + channel]))
+            }
+            for x in 1..<crop.width {
+                let a = crop.offset(x - 1, y), b = crop.offset(x, y)
+                for channel in 0..<3 {
+                    inner += abs(Double(crop.pixels[b + channel]) - Double(crop.pixels[a + channel]))
+                }
+            }
+        }
+        seam /= Double((bottom - top) * 3)
+        inner /= Double((bottom - top) * (crop.width - 1) * 3)
+        let ratio = inner > 0 ? seam / inner : 0
+        print("    \(name): wrap \(fmt(seam)) against \(fmt(inner)) of ordinary variation — \(fmt(ratio))x")
+        if ratio > wrapTolerance, seam > wrapFloor {
+            failed.append("\(name) at \(fmt(ratio))x (\(fmt(seam)) levels)")
+        }
+    }
+
+    guard failed.isEmpty else {
+        fatalError("""
+
+            This crop does not tile: \(failed.joined(separator: ", ")), \
+            against a tolerance of \(fmt(wrapTolerance))x and \(fmt(wrapFloor)) levels.
+
+            Laid end to end it would draw a vertical line down the screen every \
+            time the repeat comes round. Nothing downstream can hide that, so \
+            nothing has been installed.
+
+            The source needs to wrap: either one tile whose right edge continues \
+            into its left, or a strip carrying a little over two copies of the \
+            same stretch for the period finder to lock onto. Clouds are usually \
+            what breaks it — one crossing the join has to come back on the other \
+            side.
+            """)
+    }
 }
 
 // MARK: - Repairing the sky
@@ -381,8 +483,11 @@ private let rows = interesting
     .flatMap { stride(from: $0.0, through: min($0.1, source.height - 1), by: 6) }
     .map { $0 }
 
-private let tile = period(of: source, rows: rows)
-private let left = offset(in: source, period: tile, rows: rows)
+/// One repeat of the source, and where to cut it. A source that is already a
+/// single seamless tile has neither to find — it is the repeat, cut at nought.
+private let found = period(of: source, rows: rows)
+private let tile = found ?? source.width
+private let left = found.map { offset(in: source, period: $0, rows: rows) } ?? 0
 
 private var crop = Bitmap(width: tile, height: source.height,
                           pixels: [UInt8](repeating: 0, count: tile * source.height * 4))
@@ -401,6 +506,11 @@ private let sky = skyLine(in: crop, above: grass)
 // the scene is staged by never depends on the repair having run.
 private let mended = flattenSky(&crop)
 print("  sky flattened: \(mended.repaired) pixels moved, none by more than \(mended.worst)/255")
+
+// Last, on exactly what would be installed — the repair above touches the sky,
+// which is the band a bad wrap shows in first.
+print("  wrap:")
+verifyWrap(crop, sky: sky.row, grass: grass, earth: earth)
 
 install(crop, named: "bg_scroll")
 print("  bg_scroll \(crop.width)x\(crop.height)")
