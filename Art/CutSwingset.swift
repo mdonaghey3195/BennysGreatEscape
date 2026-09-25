@@ -70,13 +70,24 @@ private let dogPlantDepth = 7.0
 /// How tall the swingset should stand, in scene points, and so how much chain
 /// gets spliced out to get there.
 ///
-/// Chosen against the two obstacles either side of it. The bench is 73pt tall
-/// and 217 wide, and its solid box plus Benny comes to about 330 — which is the
-/// number `Layout.slideDistance` is tuned against. At 110 the swingset reads as
-/// clearly the bigger of the two things you duck, still fits a 400pt scene with
-/// room either side, and its box plus Benny comes to about 250: the bench stays
-/// the widest thing Benny slides under, so the slide's tuning is untouched.
-private let targetHeight = 110.0
+/// Pulled between two things. It should read as the bigger of the two obstacles
+/// Benny ducks — it was 110 against a backless 73pt bench, about three to two —
+/// but it is also bounded from above, and that bound is the one that is easy to
+/// forget: a slide covers a fixed `Layout.slideDistance` of ground, so the
+/// wider this gets, the less room there is to mistime the duck.
+///
+/// Both have now been learned the hard way. When the bench gained a back and
+/// grew to 104pt, 110 left the swingset looking like the smaller obstacle. 157
+/// fixed that and broke the other end: the swingset's box plus a ducked Benny
+/// came to 258 units against a 320-unit slide, leaving 62 units of leeway where
+/// there had been 121 — a 158ms window at the top scroll speed, and a duck that
+/// killed you for starting it early.
+///
+/// 130 is the compromise those two pin down. Still a quarter taller than the
+/// bench, so it stays the larger of the pair, and back to 93 units of leeway.
+/// The bench is once again the widest thing Benny slides under, which is what
+/// `slideDistance`'s own note assumes.
+private let targetHeight = 130.0
 
 /// How far a colour can drift from the corner of the source and still be called
 /// background. Tight, because the drawing has no cream in it — the closest it
