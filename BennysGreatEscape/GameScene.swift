@@ -836,6 +836,50 @@ private enum ObstacleArt {
         static let swayPeriod: TimeInterval = 2.2
     }
 
+    /// Something standing on a drawing that has a life of its own: the two dogs
+    /// sitting on the second bench of a run.
+    ///
+    /// `Hang`'s idea — a sprite pinned to another drawing at fractions of it —
+    /// with a run of textures instead of a rotation. Stated in fractions for the
+    /// same reason everything here is, so that a re-cut bench carries its
+    /// passengers with it.
+    ///
+    /// Its being a *layer* rather than part of the picture is the whole lesson
+    /// of the attempt before it. The dogs used to be drawn onto the bench —
+    /// five separate drawings of bench-and-dogs — and a prop whose bench is
+    /// redrawn five times is a prop whose bench moves: the five never agreed
+    /// about it to the pixel, and the eye catches a bench that shifts even by
+    /// one. Here the bench is `bench`'s own texture and is never animated at
+    /// all, so the only thing that can move is a dog. It also settles the other
+    /// complaint for nothing: the occupied bench is exactly the size of the
+    /// empty one, because it *is* the empty one.
+    struct Overlay {
+        let frames: [SKTexture]
+
+        /// Where its feet stand: x as a fraction of the drawing's width out
+        /// from the centre, y as a fraction of the drawing's height up from its
+        /// foot — which for these is the top of the bench's seat.
+        let xFraction: CGFloat
+        let yFraction: CGFloat
+
+        /// How tall, as a fraction of the drawing's height. Over 1 for both of
+        /// these, and rightly: a sitting dog is taller than the bench he is
+        /// sitting on. Width follows the drawing's own aspect, so a re-cut dog
+        /// can never come out stretched.
+        let heightFraction: CGFloat
+
+        /// Which pose it starts on. The two are offset for the reason
+        /// `Hang.swayPhase` gives: two dogs breathing in step read as one
+        /// two-headed animal rather than as two animals.
+        let phase: Int
+
+        /// Slow, and slow on purpose. Two dogs sitting still are the point; this
+        /// only has to keep them from looking stuffed. Five poses at this rate
+        /// is a breath every two and a quarter seconds, about what a resting dog
+        /// does.
+        static let frameTime: TimeInterval = 0.45
+    }
+
     /// One kind of obstacle: its drawing, how big it is allowed to be, and
     /// which part of the drawing is actually solid.
     struct Piece {
@@ -895,6 +939,15 @@ private enum ObstacleArt {
         /// Anything hung off the drawing. Empty for everything that is one
         /// picture standing still, which is everything but the swingset.
         var hangs: [Hang] = []
+
+        /// Anything standing on the drawing under its own steam: the two dogs
+        /// on the occupied bench, and nothing else.
+        var overlays: [Overlay] = []
+
+        /// Whether every overlay actually found its art. `numberedTextures`
+        /// hands back an empty run for a name that isn't in the catalogue, and
+        /// an overlay with no frames draws nothing at all.
+        var hasOverlayArt: Bool { !overlays.isEmpty && overlays.allSatisfy { !$0.frames.isEmpty } }
 
         /// Width over height of the drawing — what turns a height into a
         /// width, here and in `size(height:)`. Same fallback as that, for the
@@ -998,8 +1051,8 @@ private enum ObstacleArt {
         solid: .box(width: 0.950, height: 0.947, base: 0), offsetXFraction: 0
     )
 
-    /// The jump rotation. The two you duck are deliberately not in here — they
-    /// have a rotation of their own, in `ducks`.
+    /// The jump rotation. The ones you duck are deliberately not in here — they
+    /// are picked by hand in `spawnObstacle`.
     ///
     /// Flat, so a bush or a log turns up twice as often as the stump, there
     /// being two of each. Left that way on purpose: the variants exist to break
@@ -1119,6 +1172,51 @@ private enum ObstacleArt {
         offsetXFraction: 0, sink: benchSink
     )
 
+    /// Where the dogs stand, as a fraction of the bench drawing's height up from
+    /// its foot.
+    ///
+    /// Not the top of the seat, which is what this said at first and is how both
+    /// dogs came to be hovering. The bench is drawn in perspective and its seat
+    /// is a band 85 rows deep, not a line: "the top" is its *far* edge, and a
+    /// dog standing on the far edge has the whole seat showing under its paws.
+    /// This is 88% of the way forward across that band, near the front lip,
+    /// which is where a dog actually sits. `Art/CutDogs.swift` measures both
+    /// edges and prints it, so a re-cut bench moves them with it.
+    private static let dogSeat: CGFloat = 0.564
+
+    /// The two of them. Sizes and places are a composition rather than a
+    /// measurement — the dogs and the bench were drawn apart, so how they meet
+    /// is a choice — and `Art/CutDogs.swift` prints these from the same
+    /// constants its preview is built with, so the preview is what settles them.
+    private static let blackDog = Overlay(
+        frames: numberedTextures("dog_black"),
+        xFraction: -0.170, yFraction: dogSeat, heightFraction: 0.910, phase: 0
+    )
+
+    private static let goldenDog = Overlay(
+        frames: numberedTextures("dog_golden"),
+        xFraction: 0.140, yFraction: dogSeat, heightFraction: 1.080, phase: 2
+    )
+
+    /// The bench you meet second, with two dogs on it.
+    ///
+    /// The *same* bench — `bench`'s texture, clamp, solid and sink, passed
+    /// straight through. Not a second drawing sized to agree with the first, but
+    /// the first one with passengers, which is why there is nothing to measure
+    /// here and nothing that can drift out of agreement later. It renders 170 x
+    /// 83 because the empty bench does, and the duck is the same duck because it
+    /// is the same box.
+    ///
+    /// It got here the long way. An earlier version drew the dogs into the
+    /// bench and had to be a whole second obstacle: its own underseat fraction,
+    /// its own box, its own quarrel with being two fifths too long. All of that
+    /// is gone, and with it the bench that moved.
+    static let occupiedBench = Piece(
+        texture: bench.texture, heightRange: bench.heightRange, solid: bench.solid,
+        offsetXFraction: bench.offsetXFraction, sink: bench.sink,
+        overlays: [blackDog, goldenDog]
+    )
+
     /// Fraction of the swingset drawing that is open air under the seats, and
     /// the numbers that place the swings on the bar. All four are measured by
     /// `Art/CutSwingset.swift` and printed by it — the script is also what
@@ -1169,10 +1267,10 @@ private enum ObstacleArt {
         }
     )
 
-    /// The duck rotation, held apart from `jumps` because the two verbs are
-    /// weighted against each other in `spawnObstacle` rather than drawn from
-    /// one bag.
-    static let ducks = [bench, swingset]
+    // There is no `ducks` array to match `jumps`. The two verbs are weighted
+    // against each other in `spawnObstacle` rather than drawn from one bag, and
+    // the duck side of that now has to pick between three drawings on a rule
+    // rather than two at random — so it is written out there instead.
 
     /// Optional, and probed with `UIImage(named:)` for the same reason `DogArt`
     /// does it: `SKTexture(imageNamed:)` hands back a placeholder for a name
@@ -1459,6 +1557,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// rather than four seconds ahead of him.
     var onIntroFinished: (() -> Void)?
     private var hasSpawnedLowObstacle = false
+
+    /// How many benches this run has stood up, because the second one is the
+    /// occupied one. Per-run, unlike `hasSpawnedLowObstacle`, which teaches the
+    /// swipe once and is meant never to teach it again — a joke you have already
+    /// been told is worth less than a hint you have already taken.
+    private var benchesSpawned = 0
 
     /// Driven by ground contacts rather than inferred from velocity. Velocity
     /// passes through zero at the apex of every jump, so testing `vy ≈ 0` would
@@ -2128,8 +2232,25 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             // should always be teaching it on the same one — and meeting the
             // swingset before you have the verb is a harsher lesson, since it's
             // the one you can't jump instead.
-            piece = (score >= 6 ? ObstacleArt.ducks : [ObstacleArt.bench]).randomElement()
-                ?? ObstacleArt.bench
+            //
+            // An even split between the two once both are in, which is what
+            // drawing from a two-piece rotation came to. Written out rather than
+            // drawn, because the bench half of it now has to know *which* bench:
+            // the second one of a run has a pair of dogs sitting on it. Only the
+            // second. A surprise that turns up every time is scenery.
+            if score >= 6 && Bool.random() {
+                piece = ObstacleArt.swingset
+            } else {
+                benchesSpawned += 1
+                // The guard is on the dogs, not on the bench: the occupied
+                // bench *is* the bench now, so a missing texture can't be what
+                // tells you the art didn't arrive. Without the dogs it would
+                // spend the one occupied bench of the run on a drawing
+                // indistinguishable from the empty one.
+                piece = benchesSpawned == 2 && ObstacleArt.occupiedBench.hasOverlayArt
+                    ? ObstacleArt.occupiedBench
+                    : ObstacleArt.bench
+            }
             // Not sized from the speed, unlike the jumps: a duck piece's height
             // *is* the mechanic — derived from `duckClearance` so that sliding
             // works and standing doesn't — so there is nothing to solve for.
@@ -2418,6 +2539,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             sprite.position = CGPoint(x: 0, y: -piece.sink)
             node.addChild(sprite)
 
+            for overlay in piece.overlays { stand(overlay, on: node, size: size, sink: piece.sink) }
             for hang in piece.hangs { hangFromDrawing(hang, on: node, size: size, sink: piece.sink) }
 
             let x = size.width * piece.offsetXFraction
@@ -2452,6 +2574,44 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         node.physicsBody = Self.obstacleBody(body)
         return node
+    }
+
+    /// Stands a dog on its bench and sets it breathing.
+    ///
+    /// Pinned by its feet, which is what `Overlay.yFraction` names — the top of
+    /// the seat — so the dog sits on the bench rather than at some height above
+    /// its foot that would have to be re-derived every time either drawing
+    /// changed. Width follows the dog's own aspect, so a re-cut dog is never
+    /// stretched against the bench.
+    ///
+    /// In front of the drawing rather than behind it, because a dog on a bench
+    /// hides the part of the backrest he is sitting against.
+    ///
+    /// The phase is applied by rotating the array rather than by delaying the
+    /// action. A delay would leave the second dog holding pose one for most of a
+    /// second while the first had already started, which is a stillness the eye
+    /// picks out; rotating starts them both moving at once, from different
+    /// points in the same breath.
+    private func stand(_ overlay: ObstacleArt.Overlay, on node: SKNode, size: CGSize, sink: CGFloat) {
+        guard let first = overlay.frames.first, first.size().height > 0 else { return }
+        let height = size.height * overlay.heightFraction
+        let sprite = SKSpriteNode(
+            texture: first,
+            size: CGSize(width: height * first.size().width / first.size().height, height: height)
+        )
+        sprite.anchorPoint = CGPoint(x: 0.5, y: 0)
+        sprite.position = CGPoint(
+            x: size.width * overlay.xFraction,
+            y: size.height * overlay.yFraction - sink
+        )
+        sprite.zPosition = 1
+        node.addChild(sprite)
+
+        guard overlay.frames.count > 1 else { return }
+        let start = overlay.phase % overlay.frames.count
+        let cycle = Array(overlay.frames[start...] + overlay.frames[..<start])
+        sprite.run(.repeatForever(.animate(with: cycle,
+                                           timePerFrame: ObstacleArt.Overlay.frameTime)))
     }
 
     /// Hangs a swing on its drawing and sets it rocking.
@@ -3087,6 +3247,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         isOnGround = false
         obstacleTimer = 0
         obstacleInterval = 1.8
+        benchesSpawned = 0
         gameSpeed = Layout.openingSpeed
         lastUpdateTime = 0
         physicsWorld.speed = 1
