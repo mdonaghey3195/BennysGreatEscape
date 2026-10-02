@@ -39,7 +39,7 @@ private let shortestPeriod = 1200
 /// Rows worth comparing. The flat sky above and the flat field below match
 /// everywhere and would drown the signal — what carries it is the clouds, the
 /// hills, the bush line, the grass and the earth.
-private let interesting: [(Int, Int)] = [(200, 900), (1040, 1470)]
+private let interesting: [(Int, Int)] = [(2280, 2980)]
 
 /// How wide a stretch either side of a join is judged on. A single column can
 /// match by luck; twenty-five of them in a row cannot.
@@ -304,6 +304,86 @@ private func ramp(_ value: Int, from low: Int, to high: Int) -> Double {
 ///
 /// It only ever looks *up*: each column is repaired above its own horizon, so
 /// nothing here can reach the hills.
+/// Rubs out any cloud that sits across the painting's side edge.
+///
+/// The tall painting is a single tile and very nearly wraps already: measured
+/// per two-hundred-row band, its left and right edges agree *exactly*
+/// everywhere — all the sky, all the hills, all the ground — except three bands
+/// in the middle, where a couple of clouds straddle the join. Laid end to end
+/// those draw half a cloud against half of a different one, twice a lap, and
+/// `verifyWrap` refuses the crop over it.
+///
+/// The sky behind them is a flat vertical gradient, which is what makes this
+/// easy: a cloud can simply be taken out and the gradient put back, leaving a
+/// sky with two fewer clouds in it and no seam at all. Flood rather than a
+/// column walk, because a cloud is a blob — walking in row by row would clear
+/// the rows that reach the edge and leave crescents of the ones that don't.
+///
+/// The alternative is `MakeTileable`'s mirror, which wraps a whole band by
+/// making it a palindrome. That is the right answer for a painting that doesn't
+/// repeat at all; here it would double the tile and recompose a picture that is
+/// otherwise exactly right, to fix two clouds.
+private func clearEdgeClouds(_ sheet: inout Bitmap) -> (clouds: Int, pixels: Int) {
+    // Each row's own sky, by median — clouds are never most of a row.
+    var sky: [[Int]] = []
+    for y in 0..<sheet.height {
+        var channels: [[Int]] = [[], [], []]
+        for x in stride(from: 0, to: sheet.width, by: 3) {
+            let o = sheet.offset(x, y)
+            for c in 0..<3 { channels[c].append(Int(sheet.pixels[o + c])) }
+        }
+        sky.append(channels.map { $0.sorted()[$0.count / 2] })
+    }
+
+    // Where the sky stops, column by column — `flattenSky`'s test, and for the
+    // same reason: cloud is still sky for this purpose, what ends it is the blue
+    // going out of the picture. The flood has to stay above this. Let it into
+    // the hills and it will happily follow the grass right across the painting,
+    // since down there "far from the row's median" describes most of the
+    // picture rather than a cloud.
+    var horizon = [Int](repeating: 0, count: sheet.width)
+    for x in 0..<sheet.width {
+        var y = 0
+        while y < sheet.height, sheet.pixels[sheet.offset(x, y) + 2] >= 200 { y += 1 }
+        horizon[x] = y
+    }
+
+    func isCloud(_ x: Int, _ y: Int) -> Bool {
+        guard y < horizon[x] else { return false }
+        let o = sheet.offset(x, y)
+        var worst = 0
+        for c in 0..<3 { worst = max(worst, abs(Int(sheet.pixels[o + c]) - sky[y][c])) }
+        return worst > skyBlemish
+    }
+
+    var seen = [Bool](repeating: false, count: sheet.width * sheet.height)
+    var blobs = 0, cleared = 0
+    for y in 0..<sheet.height {
+        for x in [0, sheet.width - 1] {
+            let seed = y * sheet.width + x
+            guard !seen[seed], isCloud(x, y) else { continue }
+            blobs += 1
+            var stack = [seed]
+            seen[seed] = true
+            while let pixel = stack.popLast() {
+                let px = pixel % sheet.width, py = pixel / sheet.width
+                let o = sheet.offset(px, py)
+                for c in 0..<3 { sheet.pixels[o + c] = UInt8(sky[py][c]) }
+                cleared += 1
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let nx = px + dx, ny = py + dy
+                    guard nx >= 0, nx < sheet.width, ny >= 0, ny < sheet.height else { continue }
+                    let next = ny * sheet.width + nx
+                    guard !seen[next], isCloud(nx, ny) else { continue }
+                    seen[next] = true
+                    stack.append(next)
+                }
+            }
+        }
+    }
+    return (blobs, cleared)
+}
+
 private func flattenSky(_ crop: inout Bitmap) -> (repaired: Int, worst: Int) {
     // Where the sky stops, column by column. Cloud is still sky for this
     // purpose — what ends it is the blue going out of the picture.
@@ -476,8 +556,12 @@ private func ratio(_ value: Int, of total: Int) -> String {
 
 print("background")
 
-private let source = load("Art/background_source.png")
+private var source = load("Art/bg_scroll_tall_source.png")
 print("  source \(source.width)x\(source.height)")
+
+// Before anything is measured off it: the two clouds sitting across the join.
+private let swept = clearEdgeClouds(&source)
+print("  edge clouds: \(swept.clouds) rubbed out, \(swept.pixels) pixels put back to sky")
 
 private let rows = interesting
     .flatMap { stride(from: $0.0, through: min($0.1, source.height - 1), by: 6) }

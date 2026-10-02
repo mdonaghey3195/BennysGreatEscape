@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "launch_house_shut.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
