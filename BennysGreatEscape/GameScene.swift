@@ -92,13 +92,28 @@ private enum Layout {
     /// authored. The line Benny's head is checked against at the apex.
     static var visibleTop: CGFloat { sceneSize.height - visibleInsetY }
 
-    /// Where the dog and every obstacle stand.
+    /// Where the dog and every obstacle stand — and, through
+    /// `BackdropArt.bottomY`, where the painting behind them hangs from.
     ///
-    /// Just under a third of the way up what is actually shown — 109 above the
-    /// visible bottom edge of 66, in a band 368 tall. Portrait had it at 35%,
-    /// and the difference is sky that landscape can no longer afford: the
-    /// headroom above this is what a jump has to fit inside.
-    static let groundTop: CGFloat = 175
+    /// That second job makes this the one place the whole scene can be slid up
+    /// or down. Everything vertical in the game derives from it, the scenery
+    /// included, so moving it moves the world and the countryside together and
+    /// nothing comes off the plane it was staged on.
+    ///
+    /// Which is the hard-won part. `BackdropArt.standFraction` also moves the
+    /// painting and looks like the same knob, and it is not: it slides the
+    /// picture *underneath* a world that stays put. Reaching for it to drop the
+    /// scene left the dog house, the obstacles and Benny standing seventeen
+    /// units further back up the grass than they were drawn to sit, with the
+    /// house's feet in the middle of the turf instead of at its front edge.
+    ///
+    /// A quarter of the way up what is actually shown — 91 above the visible
+    /// bottom edge of 66, in a band 368 tall. It was 175 until the repainted
+    /// sky arrived with clouds near the top of its lowest band; eighteen units
+    /// down is what stops the screen's top edge slicing them, and it buys
+    /// eighteen units of jump headroom on the way past. Portrait had this at
+    /// 35%, and the difference is sky that landscape can no longer afford.
+    static let groundTop: CGFloat = 157
 
     /// Sized off the collar, which is the one part of the drawing that keeps a
     /// fixed size whatever Benny's doing — matching canvas widths would shrink
@@ -622,6 +637,15 @@ private enum BackdropArt {
     /// started, the bush line sits at Benny's heels and the whole flowered
     /// strip lies in front of him untouched, and he reads as pressed against a
     /// hedge rather than running through a park.
+    ///
+    /// **Not** the way to slide the scene up or down, however much it looks
+    /// like it. This moves the painting *relative to* everything standing on
+    /// it: Benny and the obstacles are staged against `Layout.groundTop`, which
+    /// does not follow, so turning this down drops the countryside and leaves
+    /// the whole cast planted further back up the grass — the dog house ends up
+    /// mid-turf with a band of field in front of its feet. `Layout.groundTop`
+    /// is the knob that moves both at once; this one only ever changes where in
+    /// the grass they stand.
     static let standFraction: CGFloat = 0.5
 
     /// The row of the painting the game is played on, and so the row that has
@@ -1415,7 +1439,7 @@ private enum Cliff {
     /// sprite's own top edge goes.
     ///
     /// Not a guess: `Layout.groundTop` isn't the top of the grass, it's
-    /// `BackdropArt.standFraction` (half) of the way *through* it — the same
+    /// `BackdropArt.standFraction` of the way *through* it — the same
     /// derivation `BackdropArt.anchorFraction` itself uses — so the true
     /// grass line sits this far above it:
     static let grassRise: CGFloat = BackdropArt.landSize.height
@@ -1581,7 +1605,11 @@ private enum Launch {
     /// hundred obstacles first; ships `nil`, the way `Cliff.debugSpawnAlways`
     /// ships `false`. It moves the trigger and nothing else, so what you get is
     /// the real launch and not a debug approximation of one.
-    static let debugAtScore: Int? = nil
+    ///
+    /// Set to 5 while the clip is being worked on. Put it back to `nil` before
+    /// this ships — `atScore` below is the real figure and is deliberately left
+    /// alone, so turning the knob back is the only thing that has to happen.
+    static let debugAtScore: Int? = 5
     static var trigger: Int { debugAtScore ?? atScore }
 
     /// How big the dog house stands, from Benny's own length.
@@ -1700,17 +1728,25 @@ private enum Launch {
     /// bottom of it.
     ///
     /// It was 1.35 when the ceiling was the top of the screen and the whole
-    /// ascent was 250 units. At 700 it needs to be an ascent rather than a
-    /// flick.
-    static let climb: TimeInterval = 2.2
+    /// ascent was 250 units. At 1150 it needs to be an ascent rather than a
+    /// flick — and a touch faster per unit than it was at 700, which is what a
+    /// rocket that has been burning for three seconds should look like.
+    static let climb: TimeInterval = 3.0
 
     /// How far above the turf the rocket climbs, in scene points.
     ///
     /// This used to be whatever was left of the screen — the rocket stopped just
     /// under the top edge because that was where the painting stopped. The tall
-    /// backdrop carries sky to 1807, so the only thing deciding this now is how
+    /// backdrop carries sky to 1790, so the only thing deciding this now is how
     /// high the shot wants to go.
-    static let apex: CGFloat = 700
+    ///
+    /// High enough to clear the weather. At 700 the frame sat at y 670–1038 and
+    /// the cloud layer's ceiling is 1030, so the rocket turned with cloud all
+    /// around it; the shot wants open blue. This puts the frame at 1120–1488 —
+    /// ninety units of clear air below its bottom edge, three hundred of
+    /// painted sky above its top — and gets there by climbing through the whole
+    /// cloud layer, which is the better half of the shot.
+    static let apex: CGFloat = 1150
 
     /// How much clear air is left over the rocket's nose at the top of the
     /// climb, so the shot ends in open sky rather than against a ceiling.

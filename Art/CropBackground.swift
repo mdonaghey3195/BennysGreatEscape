@@ -308,22 +308,31 @@ private func ramp(_ value: Int, from low: Int, to high: Int) -> Double {
 ///
 /// The tall painting is a single tile and very nearly wraps already: measured
 /// per two-hundred-row band, its left and right edges agree *exactly*
-/// everywhere — all the sky, all the hills, all the ground — except three bands
-/// in the middle, where a couple of clouds straddle the join. Laid end to end
-/// those draw half a cloud against half of a different one, twice a lap, and
-/// `verifyWrap` refuses the crop over it.
+/// everywhere — all the sky, all the hills, all the ground — except a few bands
+/// in the middle, where clouds straddle the join. Laid end to end those draw
+/// half a cloud against half of a different one, twice a lap, and `verifyWrap`
+/// refuses the crop over it.
 ///
 /// The sky behind them is a flat vertical gradient, which is what makes this
 /// easy: a cloud can simply be taken out and the gradient put back, leaving a
-/// sky with two fewer clouds in it and no seam at all. Flood rather than a
-/// column walk, because a cloud is a blob — walking in row by row would clear
-/// the rows that reach the edge and leave crescents of the ones that don't.
+/// sky with fewer clouds in it and no seam at all. Flood rather than a column
+/// walk, because a cloud is a blob — walking in row by row would clear the rows
+/// that reach the edge and leave crescents of the ones that don't.
+///
+/// What goes is reported by row, and that matters more than it looks. This is
+/// the one step that silently takes painted work out of the picture, and a
+/// backdrop is repainted by moving things around in the sky — so the cloud an
+/// artist nudged towards the edge is exactly the cloud this deletes, and
+/// without the rows printed there is nothing to connect the two. The second
+/// painting through here lost four, three of them in the stretch the rocket
+/// climbs past, and the fix is to move them off the edge in the source rather
+/// than anything in this file.
 ///
 /// The alternative is `MakeTileable`'s mirror, which wraps a whole band by
 /// making it a palindrome. That is the right answer for a painting that doesn't
 /// repeat at all; here it would double the tile and recompose a picture that is
 /// otherwise exactly right, to fix two clouds.
-private func clearEdgeClouds(_ sheet: inout Bitmap) -> (clouds: Int, pixels: Int) {
+private func clearEdgeClouds(_ sheet: inout Bitmap) -> (clouds: [(rows: ClosedRange<Int>, side: String, pixels: Int)], pixels: Int) {
     // Each row's own sky, by median — clouds are never most of a row.
     var sky: [[Int]] = []
     for y in 0..<sheet.height {
@@ -357,12 +366,14 @@ private func clearEdgeClouds(_ sheet: inout Bitmap) -> (clouds: Int, pixels: Int
     }
 
     var seen = [Bool](repeating: false, count: sheet.width * sheet.height)
-    var blobs = 0, cleared = 0
+    var blobs: [(rows: ClosedRange<Int>, side: String, pixels: Int)] = []
+    var cleared = 0
     for y in 0..<sheet.height {
         for x in [0, sheet.width - 1] {
             let seed = y * sheet.width + x
             guard !seen[seed], isCloud(x, y) else { continue }
-            blobs += 1
+            var top = y, bottom = y, size = 0
+            var touchesLeft = false, touchesRight = false
             var stack = [seed]
             seen[seed] = true
             while let pixel = stack.popLast() {
@@ -370,6 +381,11 @@ private func clearEdgeClouds(_ sheet: inout Bitmap) -> (clouds: Int, pixels: Int
                 let o = sheet.offset(px, py)
                 for c in 0..<3 { sheet.pixels[o + c] = UInt8(sky[py][c]) }
                 cleared += 1
+                size += 1
+                top = min(top, py)
+                bottom = max(bottom, py)
+                if px == 0 { touchesLeft = true }
+                if px == sheet.width - 1 { touchesRight = true }
                 for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                     let nx = px + dx, ny = py + dy
                     guard nx >= 0, nx < sheet.width, ny >= 0, ny < sheet.height else { continue }
@@ -379,6 +395,9 @@ private func clearEdgeClouds(_ sheet: inout Bitmap) -> (clouds: Int, pixels: Int
                     stack.append(next)
                 }
             }
+            let side = touchesLeft && touchesRight ? "both edges"
+                     : touchesLeft ? "left edge" : "right edge"
+            blobs.append((top...bottom, side, size))
         }
     }
     return (blobs, cleared)
@@ -559,9 +578,15 @@ print("background")
 private var source = load("Art/bg_scroll_tall_source.png")
 print("  source \(source.width)x\(source.height)")
 
-// Before anything is measured off it: the two clouds sitting across the join.
+// Before anything is measured off it: the clouds sitting across the join.
 private let swept = clearEdgeClouds(&source)
-print("  edge clouds: \(swept.clouds) rubbed out, \(swept.pixels) pixels put back to sky")
+print("  edge clouds: \(swept.clouds.count) rubbed out,"
+    + " \(swept.pixels) pixels put back to sky")
+for cloud in swept.clouds.sorted(by: { $0.pixels > $1.pixels }) {
+    print("    rows \(cloud.rows.lowerBound)-\(cloud.rows.upperBound)"
+        + " on the \(cloud.side), \(cloud.pixels) pixels"
+        + " — move it clear of the edge in the source to keep it")
+}
 
 private let rows = interesting
     .flatMap { stride(from: $0.0, through: min($0.1, source.height - 1), by: 6) }
