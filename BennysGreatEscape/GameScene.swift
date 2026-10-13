@@ -623,11 +623,30 @@ private enum BackdropArt {
     /// the worst one available.
     static let aspect: CGFloat = 0.5880
 
+    /// Down from the top of the crop: the top of the weather.
+    ///
+    /// Measured, like everything else here, and printed by the cutter —
+    /// `cloudLine` in `Art/CropBackground.swift` reports the highest row
+    /// carrying cloud every time the backdrop is cut. The launch climbs to this
+    /// and stops, so a repainted sky moves the top of the shot with it instead
+    /// of leaving the rocket hanging wherever a number typed in last year
+    /// happened to put it.
+    ///
+    /// It is printed rather than measured by hand because it moves further than
+    /// anyone expects. The painting this came from was handed over as a tweak to
+    /// one cloud and shifted the ceiling ninety-one rows, which is about forty
+    /// units of climb.
+    static let cloudCeilingFraction: CGFloat = 0.3960
+
+    /// That row in scene coordinates — the height at which the sky runs out of
+    /// weather.
+    static var cloudCeiling: CGFloat { bottomY + height * (1 - cloudCeilingFraction) }
+
     /// Down from the top of the crop: the near and far edges of the grass, and
     /// the band of flat sky the two scrolling layers are cut at.
     static let grassLineFraction: CGFloat = 0.8497
     static let earthLineFraction: CGFloat = 0.8820
-    static let skySplitFraction: CGFloat = 0.7923
+    static let skySplitFraction: CGFloat = 0.7910
 
     /// How far down the grass everything stands. Nought is its near edge, one
     /// the lip of the cut earth.
@@ -1588,12 +1607,271 @@ private enum LaunchArt {
     /// the rocket in the middle of the shot.
     static let flyInHouses: CGFloat = 0.878
 
+    /// Where the rocket's nose cone sits on this sheet's canvas, as a fraction
+    /// across and up.
+    ///
+    /// The flier is anchored here rather than at its centre, because the clip
+    /// swaps him onto `AngerArt`'s sheets, and those put the nose somewhere
+    /// else entirely — 0.87 across and 0.22 up, against 0.91 and 0.38 here. A
+    /// centred anchor would jump the rocket by a sixth of its height on the
+    /// swap, which is about fourteen points and plainly visible. Anchored on
+    /// the nose, every pose hangs from the same point and nothing moves.
+    static let flyNose = CGPoint(x: 0.9050, y: 0.3830)
+
     /// Same reasoning as `ObstacleArt.load` and `DogArt`: `SKTexture(imageNamed:)`
     /// hands back a placeholder for a name that isn't there, so it can't tell you
     /// the art has gone missing. A nil here means the clip doesn't play.
     private static func load(_ name: String) -> SKTexture? {
         UIImage(named: name).map(SKTexture.init(image:))
     }
+}
+
+/// The rabbit's saucer, four frames of him laughing.
+///
+/// The same rabbit from the opening clip, which is the whole joke: Benny chased
+/// him across a park, lost him, got into a rocket, and the rabbit is already up
+/// here and finds it funny.
+///
+/// Cut by `Art/CutRabbit.swift`, which hangs every frame from the saucer's rim.
+/// The sheet draws them at four different heights, and a sprite swapping between
+/// them in place would jump forty-three pixels — not a subtle fault on a craft
+/// meant to hang in the air.
+private enum UfoArt {
+    /// `ufo_0` is the calm pose he flies in on; 1 to 3 are the laugh.
+    static let frames: [SKTexture] = numberedTextures("ufo")
+
+    /// Printed by the cutter.
+    static let aspect: CGFloat = 1.3848
+}
+
+/// Benny losing his temper, and the face he settles into afterwards.
+///
+/// Cut by `Art/CutAngry.swift`, which hangs all seven poses — six angry frames
+/// and the serious one — from the rocket's nose cone. The sheet draws the craft
+/// sinking twenty-four pixels across the six and snapping back eighteen on the
+/// last, which is both a visible fault and exactly the shape a registration bug
+/// takes; it is taken out there and a recoil is put back here, where it can be
+/// shaped.
+private enum AngerArt {
+    /// Six frames: tongue-out happy, through gritted teeth, to a burst of anger
+    /// over his head.
+    static let frames: [SKTexture] = numberedTextures("benny_angry")
+
+    /// Mouth closed, eyes forward. What the flying phase is played on.
+    static let serious: SKTexture? = UIImage(named: "benny_serious").map(SKTexture.init(image:))
+
+    /// Printed by the cutter, and shared by all seven — they are installed on
+    /// one common canvas, which is the whole point of registering them.
+    static let aspect: CGFloat = 1.7090
+    static let nose = CGPoint(x: 608.0 / 699.0, y: 1 - 321.0 / 409.0)
+
+    /// How wide these are drawn against the launch sheet's flight pose.
+    ///
+    /// Measured on the nose cone, the one feature that is the same object in
+    /// all of them: it is 0.13947 of the launch canvas and 0.13877 of this one.
+    /// Half a percent, so this changes almost nothing — but it is the number
+    /// that would matter if either sheet were ever recropped, and guessing it
+    /// is how Benny ends up a different size mid-shot.
+    static let widthInFlyFrames: CGFloat = 1.0050
+}
+
+/// The card the game ends on, now that there is an end to reach.
+///
+/// V1 ships one story beat: the run, the launch, and the cutscene where the
+/// rabbit laughs and gets away. Someone who reaches it has finished everything
+/// there is, and used to be told "Good boy! Tap to retry" — the crash message,
+/// which says nothing about why the game stopped.
+///
+/// The cutscene has already done the work: the rabbit escaped and Benny is
+/// furious. That is a cliffhanger whether or not it is labelled one, so the card
+/// names it rather than reading like release notes.
+private enum Finale {
+    /// Every line of the card, with the size it is drawn at and how far its
+    /// centre sits below the line before it.
+    ///
+    /// A node per line, which is not the obvious way to build this and is the
+    /// only way that works. `SKLabelNode` will happily hold all four lines, but
+    /// it left-aligns them inside the block whatever `horizontalAlignmentMode`
+    /// is set to — measured on screen, the headline landed centred at 400 while
+    /// "is coming soon" and "Tap to play again" sat at 369 and 374. It also
+    /// draws every line at one size, where the headline wants to be nearly
+    /// twice the rest.
+    ///
+    /// Laying the lines out here also makes the spacing a number rather than a
+    /// consequence. The first attempt left three points between the headline's
+    /// bottom and the body's top, which on screen read as one crowded block.
+    static let lines: [(text: String, size: CGFloat, drop: CGFloat)] = [
+        ("To be continued…", 38, 0),
+        ("More of Benny's escape", 20, 48),
+        ("is coming soon", 20, 26),
+        ("Tap to play again", 20, 48),
+    ]
+}
+
+/// How the flying phase is paced.
+///
+/// One place for its numbers from the start, the way `Intro` and `Launch` each
+/// have one, so that when lanes and obstacles arrive they have somewhere to go
+/// that isn't the middle of a function.
+private enum Flight {
+    /// How long Benny takes to come in from off the left and settle at
+    /// `Layout.dogX`, where he runs on the ground. Eased out, so he arrives
+    /// rather than stops.
+    static let entry: TimeInterval = 0.7
+
+    /// A slow rise and fall while he flies, and how long each half takes.
+    /// Small: this is the difference between flying and being a sticker on a
+    /// moving picture, not a manoeuvre.
+    static let bob: CGFloat = 14
+    static let bobTime: TimeInterval = 1.3
+
+    /// How long Benny flies on after the rabbit has gone, before the card.
+    ///
+    /// It was six seconds, which was padding from when this phase had nothing in
+    /// it at all. Now the card is what it was waiting for, and six seconds of a
+    /// dog flying at nothing in particular is six seconds of the player
+    /// wondering whether the game has stopped working. Long enough to let the
+    /// serious pose land, and no longer.
+    static let look: TimeInterval = 1.8
+}
+
+/// The clip the flying phase opens on.
+///
+/// Beats rather than one duration, because each waits on the one before it and
+/// the whole thing is read in order — the same arrangement `Intro` and `Launch`
+/// use for the other two clips in the game.
+private enum Rabbit {
+    /// How big the saucer is, in Bennys-on-a-rocket. Hung off him rather than
+    /// typed in points so the two keep their relative size if he is ever
+    /// resized — the same stance `LaunchArt` takes with the dog house.
+    ///
+    /// A matched pair: 135 units against his 136, so neither craft outranks the
+    /// other. It was 1.6, which put the saucer at 1.66x his drawn width and
+    /// read even larger than that — his canvas is only 56% full vertically
+    /// where the saucer's is 100% full, so comparing canvases flatters it and
+    /// comparing drawings is the only honest measure.
+    static let widthInFliers: CGFloat = 0.95
+
+    /// How high he hangs, in scene points. Above the middle, where Benny
+    /// arrives, so the rabbit is looking *down* at him.
+    static let height: CGFloat = 300
+
+    /// In from off the left, and where he stops.
+    static let flyIn: TimeInterval = 1.4
+    static var stopX: CGFloat { Layout.sceneSize.width / 2 }
+
+    /// A beat with the rabbit alone on screen before Benny turns up, so the
+    /// shot reads as the rabbit being here first and Benny arriving — which is
+    /// the order the joke needs.
+    static let beforeBenny: TimeInterval = 0.25
+
+    /// And another after Benny has settled, before the laugh. This one is the
+    /// rabbit noticing him.
+    static let beforeLaugh: TimeInterval = 0.5
+
+    /// The laugh, as an order to play the poses in.
+    ///
+    /// Up through all of them and then back and forth across the top two,
+    /// rather than all of them and then the last few on repeat. The repeat is
+    /// what it was, and it sawtoothed: the sheet draws his muzzle at four
+    /// different widths — 193, 210, 202, 218, a 13% spread, where his ears and
+    /// skull are pixel-identical — so cycling the last three snapped him from
+    /// the widest pose back to a narrow one three times over, and the face read
+    /// as pulsing rather than laughing.
+    ///
+    /// A ping-pong matches every rise with the same fall back down. The muzzle
+    /// still moves, because it is drawn that way and no amount of ordering can
+    /// rescale part of a sprite, but it walks instead of snapping.
+    ///
+    /// Built from the sheet rather than typed, so a redraw with a different
+    /// number of poses can't index off the end of it.
+    static var laughOrder: [Int] {
+        let last = UfoArt.frames.count - 1
+        guard last >= 2 else { return Array(0...max(0, last)) }
+        // 0,1,…,last, then (last-1, last) twice — up, and back and forth.
+        return Array(0...last) + [last - 1, last, last - 1, last, last - 1]
+    }
+
+    static let laughFrame: TimeInterval = 0.12
+    static var laughing: TimeInterval { TimeInterval(laughOrder.count) * laughFrame }
+
+    /// And away to the right. He came in from the left and carries on rather
+    /// than turning round, which keeps him going the way the world goes.
+    static let away: TimeInterval = 1.0
+
+    /// Benny's temper, which starts the instant the laugh ends — so the rabbit
+    /// is bolting while he is still gritting his teeth, rather than waiting
+    /// politely for him to finish.
+    static let angryFrame: TimeInterval = 0.13
+    static var angry: TimeInterval { TimeInterval(AngerArt.frames.count) * angryFrame }
+
+    /// And a beat held on the burst before he composes himself.
+    ///
+    /// Longer than the wind-up that gets him there, deliberately. It was 0.45 —
+    /// shorter than the six frames it followed — and he looked like he got over
+    /// it the moment he arrived. Anger that takes 0.78s to build and 0.45s to
+    /// drop reads as a flinch; holding it past the build is what makes it a
+    /// grudge.
+    ///
+    /// He is motionless through this, and that is fine rather than frozen: the
+    /// high sky is scrolling past him at `SkyArt.speed` the whole time, so the
+    /// shot still moves even though he doesn't.
+    static let hold: TimeInterval = 1.0
+
+    /// How far the rocket sinks as he winds up, and jerks back as the burst
+    /// goes off. This is the drift the cutter took out of the sheet, put back
+    /// deliberately: twenty-four pixels of a 371-pixel drawing is about five
+    /// points at the size he flies.
+    static let recoil: CGFloat = 5
+
+    /// A slow rise and fall while he waits and laughs, so the saucer reads as
+    /// hanging in the air rather than pinned to the glass.
+    static let hover: CGFloat = 9
+    static let hoverTime: TimeInterval = 0.9
+}
+
+/// The sky the flying phase is played against.
+///
+/// A single painting rather than the running game's pair of layers, because up
+/// here there is nothing to be in front of anything else: no ground to travel at
+/// the world's speed and no hills to lag behind it. One texture, tiled sideways,
+/// and that is the whole backdrop.
+///
+/// Cut by `Art/CropSky.swift`, which exists because `CropBackground` cannot do
+/// this one — that script's job is to find the grass line, the lip of the cut
+/// earth and the band of flat sky the layers split at, and this painting has no
+/// ground in it to find them in.
+private enum SkyArt {
+    /// Same stance as `BackdropArt.sheet` and for the same reason:
+    /// `SKTexture(imageNamed:)` hands back a placeholder for a name that isn't
+    /// there, so it can't tell you the art has gone missing.
+    static let sheet: SKTexture? = UIImage(named: "bg_sky").map(SKTexture.init(image:))
+
+    /// Printed by the cutter. One repeat of the painting.
+    static let aspect: CGFloat = 2.6741
+
+    /// Drawn to the *authored* height, not the visible one.
+    ///
+    /// `.aspectFill` crops the scene vertically by between nothing and
+    /// `Layout.visibleInsetY` depending on how square the device is, so a sky
+    /// sized to the 368 units a phone shows would come up short on an iPad and
+    /// leave `Palette.field` along the top and bottom. Sized to all 500, the
+    /// narrow case simply sees the middle of it.
+    static var height: CGFloat { Layout.sceneSize.height }
+    static var tileWidth: CGFloat { height * aspect }
+
+    /// Same derivation as `BackdropArt.stripCount`, same reason: enough copies
+    /// to cover the scene at every point in the scroll rather than at most of
+    /// them.
+    static var stripCount: Int {
+        max(2, Int((Layout.sceneSize.width / tileWidth).rounded(.up)) + 1)
+    }
+
+    /// Faster than the running game's clouds, which drift at 16 against a world
+    /// doing 300-odd. Up here the sky *is* the ground — it is the only thing
+    /// telling the player they are moving at all — so it travels at something
+    /// like flying speed.
+    static let speed: CGFloat = 150
 }
 
 /// How the launch is staged and paced — `Intro`'s job for the other clip.
@@ -1609,7 +1887,7 @@ private enum Launch {
     /// Set to 5 while the clip is being worked on. Put it back to `nil` before
     /// this ships — `atScore` below is the real figure and is deliberately left
     /// alone, so turning the knob back is the only thing that has to happen.
-    static let debugAtScore: Int? = 5
+    static let debugAtScore: Int? = nil
     static var trigger: Int { debugAtScore ?? atScore }
 
     /// How big the dog house stands, from Benny's own length.
@@ -1733,47 +2011,81 @@ private enum Launch {
     /// rocket that has been burning for three seconds should look like.
     static let climb: TimeInterval = 3.0
 
-    /// How far above the turf the rocket climbs, in scene points.
+    /// How much clear air is left under the frame when the climb stops.
     ///
-    /// This used to be whatever was left of the screen — the rocket stopped just
-    /// under the top edge because that was where the painting stopped. The tall
-    /// backdrop carries sky to 1790, so the only thing deciding this now is how
-    /// high the shot wants to go.
-    ///
-    /// High enough to clear the weather. At 700 the frame sat at y 670–1038 and
-    /// the cloud layer's ceiling is 1030, so the rocket turned with cloud all
-    /// around it; the shot wants open blue. This puts the frame at 1120–1488 —
-    /// ninety units of clear air below its bottom edge, three hundred of
-    /// painted sky above its top — and gets there by climbing through the whole
-    /// cloud layer, which is the better half of the shot.
-    static let apex: CGFloat = 1150
+    /// The whole of what decides how high he goes. Thirty units is enough that
+    /// the last cloud has visibly gone rather than being half out of shot, and
+    /// little enough that it leaves on the frame the turn begins on.
+    static let cloudClearance: CGFloat = 30
+
+    /// Half of what the player can actually see, which is what the frame's edges
+    /// are measured from.
+    private static var halfFrame: CGFloat { Layout.visibleTop - Layout.sceneSize.height / 2 }
 
     /// How much clear air is left over the rocket's nose at the top of the
     /// climb, so the shot ends in open sky rather than against a ceiling.
     static let noseMargin: CGFloat = 24
 
-    /// How far the camera rises with him, given a rocket that tall.
+    /// How far the camera rises: until its bottom edge has just cleared the top
+    /// of the painted weather, and not a unit further.
     ///
-    /// Derived rather than chosen, and that is the whole lesson of the first
-    /// attempt at it: 550 was picked by putting the apex nicely inside the
-    /// frame, which quietly assumed the rocket was a point. It is 139 units
-    /// tall and drawn from its foot, so the nose finished thirty units past the
-    /// top edge and the dog's head was sliced off at the one moment of the clip
-    /// anybody is looking at him.
+    /// This is the direction the derivation runs now, and it used to run the
+    /// other way — a chosen apex, with the camera worked out from it. That put
+    /// the frame seventy-three units above the last cloud instead of thirty, and
+    /// those extra units cost about half a second. They were worse than they
+    /// sound, because the high sky has faded up by then and is parented to the
+    /// camera: with the clouds gone and the new sky moving with the frame, there
+    /// is nothing on screen that can show the camera moving at all. The rocket
+    /// simply hung upright in flat blue until the turn came.
     ///
-    /// It still comes out well under `apex` — about a hundred units under — and
-    /// that gap is the point: he gains on the frame as well as on the ground,
-    /// which is what reads as climbing rather than as the world dropping away
-    /// beneath a rocket hanging still in the middle of the screen.
-    static func cameraRise(forRocketOfHeight height: CGFloat) -> CGFloat {
-        Layout.groundTop + apex + height + noseMargin - Layout.visibleTop
+    /// So the shot's real constraint — be above the weather — decides the
+    /// camera, and the rocket is then placed inside the frame rather than the
+    /// frame around the rocket.
+    static var cameraRise: CGFloat {
+        BackdropArt.cloudCeiling + cloudClearance + halfFrame - Layout.sceneSize.height / 2
     }
+
+    /// How far above the turf the rocket climbs, given a rocket that tall:
+    /// nose `noseMargin` under the top of the frame the camera has just reached.
+    ///
+    /// Its height has to be asked for rather than assumed, and that is the
+    /// lesson of the first attempt at this. The rocket is 139 units tall and
+    /// drawn from its foot; treating it as a point put the nose thirty units
+    /// past the top edge and sliced the dog's head off at the one moment of the
+    /// clip anybody is looking at him.
+    static func apex(forRocketOfHeight height: CGFloat) -> CGFloat {
+        Layout.sceneSize.height / 2 + cameraRise + halfFrame - noseMargin - height - Layout.groundTop
+    }
+
+    /// When in the climb the high sky starts coming up, and how long it takes.
+    ///
+    /// Tied to the one moment in the shot worth tying it to: the rocket's foot
+    /// passes the cloud ceiling at about 2.6 seconds of the climb — it is eased
+    /// in, so most of the distance is covered late — and that is when the air is
+    /// meant to change. Any earlier and the new sky is washing over cloud that
+    /// is still in frame.
+    ///
+    /// A cross-fade rather than a cut, and rather than a join. Stacking the two
+    /// paintings was the first thought and the measurement killed it: the
+    /// running sky's top row is (120, 202, 250) and the high sky's bottom row is
+    /// (164, 220, 252), a step of 44 out of 255 — and the wrong way round, since
+    /// the new one lightens as it descends. It is a complete sky in its own
+    /// right, not a continuation. Faded, though, both are blue and the change
+    /// reads as the air thinning.
+    /// Timed to *finish* at the top of the climb rather than to start at a
+    /// chosen moment. Landing it early was the other half of the dead beat: the
+    /// clouds were being covered over while they still had a way to fall, so
+    /// they vanished instead of leaving, and what was left was flat blue with
+    /// nothing happening in it.
+    static var skyFadeAfter: TimeInterval { max(0, climb - skyFade) }
+    static let skyFade: TimeInterval = 0.6
 
     /// The turn from standing on its tail to flying level.
     static let turnFrame: TimeInterval = 0.09
 
-    /// And away.
-    static let away: TimeInterval = 1.2
+    /// And away. Brisk: he has turned, the shot is over, and the flying phase
+    /// is what everyone is waiting for.
+    static let away: TimeInterval = 0.8
 }
 
 // MARK: - Scene
@@ -1846,6 +2158,26 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// Whether the clip is playing and the scene belongs to it.
     private var isLaunching = false
     private var launch: SKNode?
+
+    /// The flying phase's backdrop, held on the camera rather than in the world.
+    ///
+    /// Which is the one design decision in here worth stating. The launch leaves
+    /// the camera 1036 units above where it started, and anything parented to
+    /// the scene has to know that to be drawn in the right place. Hang the sky
+    /// off the camera instead and its altitude stops existing as a problem: the
+    /// strips fill the frame wherever the frame happens to be, scroll sideways
+    /// on their own, and the camera can be put back to the middle of the scene
+    /// afterwards without a pixel of it moving.
+    private var highSky: SKNode?
+
+    /// Whether the flying phase has taken over.
+    ///
+    /// Not cosmetic. `update` is written against a world that exists — turf to
+    /// scroll, a dog to read a shadow off, a spawner feeding obstacles onto the
+    /// ground — and `beginPhaseTwo` takes all of that away. Left running it
+    /// quietly carried on, and the first thing it did up there was spawn a log
+    /// into the open sky.
+    private var isFlying = false
 
     /// Whether the score has asked for the dog house but the spawner hasn't
     /// stood it up yet.
@@ -2223,6 +2555,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // for, it happens once, and a stray tap is not a request to miss it. So
         // this swallows the touch rather than acting on it.
         guard !isLaunching else { return }
+        // And nothing up here answers to a gesture yet. The dog these would
+        // steer has been taken out of the scene by `beginPhaseTwo`, so without
+        // this a swipe goes looking for a jump on a detached physics body.
+        guard !isFlying else { return }
         guard !isGameOver else {
             restart()
             return
@@ -3335,6 +3671,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let delta = min(currentTime - lastUpdateTime, 1.0 / 30)
         lastUpdateTime = currentTime
 
+        // Everything below this line belongs to the world `beginPhaseTwo` takes
+        // down. Nothing in the flying phase is stepped from here yet — the sky
+        // drifts on an action and Benny bobs on one — so this is the whole of
+        // what the flying phase asks of `update` for now.
+        guard !isFlying else { return }
+
         // The man is pinned to the turf rather than given a slide of his own, so
         // that when the world does start moving he can't moonwalk against it.
         let step = gameSpeed * worldScroll * CGFloat(delta)
@@ -3444,9 +3786,15 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // How far off the turf he is, as a fraction of a full jump — the one
         // thing the shadow has to say. Clamped because a fall through a gap
         // goes below the line and the apex can be passed on a retry frame.
-        let lift = min(1, max(0, (dog.position.y - Layout.dogGroundLine) / Layout.jumpHeight))
-        dogShadow.setScale(1 - (1 - Layout.shadowLiftScale) * lift)
-        dogShadow.alpha = 1 - (1 - Layout.shadowLiftAlpha) * lift
+        //
+        // Stops once he sets off for the door. From there the shadow is being
+        // faded out by `startLaunchDash`, and an alpha written every frame from
+        // here would simply overwrite the fade.
+        if !launchDashed {
+            let lift = min(1, max(0, (dog.position.y - Layout.dogGroundLine) / Layout.jumpHeight))
+            dogShadow.setScale(1 - (1 - Layout.shadowLiftScale) * lift)
+            dogShadow.alpha = 1 - (1 - Layout.shadowLiftAlpha) * lift
+        }
 
         // Falling through a cliff's gap is a fourth way to end a run,
         // alongside the physics contact `didBegin` already handles — there is
@@ -3590,6 +3938,19 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let dash = SKAction.moveTo(x: launchHandoff, duration: Launch.slide(at: gameSpeed))
         dash.timingMode = .easeInEaseOut
         dog.run(dash)
+
+        // And the shadow goes, because this is the one moment it stops being
+        // his. It is drawn once at `Layout.dogX` and never moved again — which
+        // is right for every other second of the game, where Benny holds that
+        // mark and the world travels past him. The dash is the only time he
+        // leaves it, and the shadow stays behind: a dark ellipse sitting on
+        // bare turf while he runs off to the right, still there through the
+        // whole slide, still there with the door shut and nobody in shot.
+        //
+        // Faded rather than cut, over the dash he is already running. Cutting
+        // it works too and is one line shorter, but it pops on a frame where
+        // the eye is on him and nothing else is changing.
+        dogShadow.run(.fadeOut(withDuration: Launch.slide(at: gameSpeed) * 0.6))
     }
 
     /// Stands the dog house up off the right-hand edge and lets the turf bring
@@ -3750,7 +4111,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // frame — it is the one measurement here that belongs to the world.
         let ascent = SKAction.move(to: CGPoint(
             x: rocket.position.x,
-            y: Layout.groundTop + Launch.apex - stage.position.y
+            y: Layout.groundTop + Launch.apex(forRocketOfHeight: rocket.size.height)
+                - stage.position.y
         ), duration: Launch.climb)
         ascent.timingMode = .easeIn
 
@@ -3758,8 +4120,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // so the two accelerate together and he simply pulls ahead. By the top
         // the turf is four hundred units below the bottom edge and there is
         // nothing in shot but sky — which is the shot the flying phase opens on.
-        let lift = SKAction.moveBy(x: 0, y: Launch.cameraRise(forRocketOfHeight: rocket.size.height),
-                                   duration: Launch.climb)
+        let lift = SKAction.moveBy(x: 0, y: Launch.cameraRise, duration: Launch.climb)
         lift.timingMode = .easeIn
 
         // And away to the right, level, far enough past the corner to be gone
@@ -3795,6 +4156,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
                 rocket.isHidden = false
                 rocket.run(ascent)
                 self?.camera?.run(lift)
+                self?.raiseHighSky()
             },
             .wait(forDuration: Launch.climb),
 
@@ -3836,18 +4198,257 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         scenery.removeAllActions()
     }
 
+    /// Brings the high sky up behind the climb.
+    ///
+    /// Built here rather than with the rest of the world because until the
+    /// rocket is lit there is nothing up there to look at, and a second backdrop
+    /// sitting at alpha nought through an entire run is a scrolling action and
+    /// two sprites being paid for every frame of a game that never shows them.
+    private func raiseHighSky() {
+        guard highSky == nil, let camera, let texture = SkyArt.sheet else { return }
+
+        let sky = SKNode()
+        sky.zPosition = -200  // behind the painting it is replacing
+        sky.alpha = 0
+        camera.addChild(sky)
+        highSky = sky
+
+        // Centred on the camera, since that is where its origin now is.
+        let size = CGSize(width: SkyArt.tileWidth, height: SkyArt.height)
+        for index in 0..<SkyArt.stripCount {
+            let strip = SKSpriteNode(texture: texture, size: size)
+            strip.anchorPoint = .zero
+            strip.position = CGPoint(x: CGFloat(index) * size.width - Layout.sceneSize.width / 2,
+                                     y: -size.height / 2)
+            sky.addChild(strip)
+            drift(strip, speed: SkyArt.speed, width: SkyArt.tileWidth)
+        }
+
+        sky.run(.sequence([
+            .wait(forDuration: Launch.skyFadeAfter),
+            .fadeIn(withDuration: Launch.skyFade),
+        ]))
+    }
+
     /// Where the second phase of the game begins.
     ///
-    /// A stub, and the only one in this file. The rocket has levelled off and
-    /// flown out of shot, which is the shot the flying phase opens on — three
-    /// lanes, up and down — and none of that is built yet. Until it is, the run
-    /// ends here with the score it reached, so the launch can be played and
-    /// judged without the game being left in a state it can't get out of.
+    /// The rocket has levelled off and flown out of shot, and the high sky came
+    /// up behind it on the way. What is left to do is take down the world he has
+    /// left — all of it, since none of it can be reached from up here — and fly
+    /// him back in.
     ///
-    /// When the flying phase lands, it attaches here and nowhere else.
+    /// The camera goes back to the middle of the scene in the same breath, and
+    /// that move is free: the only thing on screen is the sky, and the sky is
+    /// parented to the camera, so it cannot see the camera move. Everything the
+    /// flying phase builds from here is in ordinary scene coordinates with the
+    /// frame where it has always been — which is what keeps physics possible
+    /// when there is finally something up here to hit.
     private func beginPhaseTwo() {
         finishLaunch()
-        endGame()
+
+        // The ground, and everything standing on it.
+        scenery.removeFromParent()
+        land?.removeFromParent()
+        ground.removeFromParent()
+        dog.removeFromParent()
+        dogShadow.removeFromParent()
+        enumerateChildNodes(withName: "obstacle") { node, _ in node.removeFromParent() }
+        enumerateChildNodes(withName: "cliff") { node, _ in node.removeFromParent() }
+
+        camera?.position = CGPoint(x: Layout.sceneSize.width / 2,
+                                   y: Layout.sceneSize.height / 2)
+
+        isFlying = true
+        startFlying()
+    }
+
+    /// The flying phase, so far: Benny comes in from the left and flies.
+    ///
+    /// Deliberately only this much. There are no lanes yet and nothing to dodge,
+    /// because the backdrop is what everything else will be judged against and
+    /// it is worth looking at on its own first. The run still ends after a few
+    /// seconds, the way `beginPhaseTwo` has ended it all along, so a launch can
+    /// be played through without leaving the game somewhere it can't get out of.
+    private func startFlying() {
+        guard let pose = LaunchArt.flyFrames.last else { endGame(crashed: false); return }
+
+        let width = Launch.houseWidth * LaunchArt.flyInHouses
+        let flier = SKSpriteNode(
+            texture: pose,
+            size: CGSize(width: width, height: width * pose.size().height / pose.size().width)
+        )
+        flier.name = "flier"
+        flier.zPosition = 10
+
+        // Anchored on the rocket's nose, not the canvas centre — see
+        // `LaunchArt.flyNose`. His position is therefore where the *nose* goes,
+        // so the figures below are worked back from where the centred sprite
+        // used to sit: he ends up in exactly the same place, and every later
+        // texture swap hangs from the same point.
+        flier.anchorPoint = LaunchArt.flyNose
+        let noseX = Layout.dogX + (LaunchArt.flyNose.x - 0.5) * flier.size.width
+        let noseY = Layout.sceneSize.height / 2
+            + (LaunchArt.flyNose.y - 0.5) * flier.size.height
+        flier.position = CGPoint(x: -flier.size.width, y: noseY)
+        addChild(flier)
+
+        let entry = SKAction.moveTo(x: noseX, duration: Flight.entry)
+        entry.timingMode = .easeOut
+
+        // A slow rise and fall on top of it, so he reads as flying rather than
+        // as a sticker on a scrolling picture. It is the only motion he has
+        // until the lanes arrive.
+        let bob = SKAction.sequence([
+            .moveBy(x: 0, y: Flight.bob, duration: Flight.bobTime),
+            .moveBy(x: 0, y: -Flight.bob, duration: Flight.bobTime),
+        ])
+        bob.timingMode = .easeInEaseOut
+
+        let arrive = SKAction.sequence([entry, .repeatForever(bob)])
+
+        // No saucer, no clip — `runIntro`'s stance for missing art, and for the
+        // same reason. Benny still flies in and the phase still starts.
+        guard let ufo = makeUfo(nextTo: flier) else {
+            flier.run(arrive)
+            endFlightAfterLook()
+            return
+        }
+        addChild(ufo)
+
+        let hover = SKAction.sequence([
+            .moveBy(x: 0, y: Rabbit.hover, duration: Rabbit.hoverTime),
+            .moveBy(x: 0, y: -Rabbit.hover, duration: Rabbit.hoverTime),
+        ])
+        hover.timingMode = .easeInEaseOut
+
+        let flyIn = SKAction.moveTo(x: Rabbit.stopX, duration: Rabbit.flyIn)
+        flyIn.timingMode = .easeOut
+
+        let away = SKAction.moveTo(x: Layout.sceneSize.width + ufo.size.width,
+                                   duration: Rabbit.away)
+        away.timingMode = .easeIn
+
+        // Up through the poses and then back and forth across the top two —
+        // see `Rabbit.laughOrder`. He is left on the calm pose for the flight
+        // out, so he leaves composed.
+        let laugh = SKAction.sequence([
+            .animate(with: Rabbit.laughOrder.map { UfoArt.frames[$0] },
+                     timePerFrame: Rabbit.laughFrame),
+            .setTexture(UfoArt.frames[0]),
+        ])
+
+        ufo.run(.sequence([flyIn, .repeatForever(hover)]))
+
+        run(.sequence([
+            .wait(forDuration: Rabbit.flyIn + Rabbit.beforeBenny),
+            .run { flier.run(arrive) },
+
+            .wait(forDuration: Flight.entry + Rabbit.beforeLaugh),
+            .run { ufo.run(laugh) },
+
+            // The hover is a move and so is the exit; both write `position`, so
+            // the hover is stopped rather than left to argue with the flight
+            // out. Stopped here and not before, because it is what keeps the
+            // saucer alive through the laugh.
+            //
+            // Benny starts fuming on the same frame, so the rabbit is bolting
+            // while he is still gritting his teeth rather than after.
+            .wait(forDuration: Rabbit.laughing),
+            .run { [weak self] in
+                ufo.removeAllActions()
+                ufo.run(.sequence([away, .removeFromParent()]))
+                self?.startAnger(flier)
+            },
+
+            .wait(forDuration: Rabbit.angry + Rabbit.hold),
+            .run { [weak self] in
+                self?.settle(flier)
+                self?.endFlightAfterLook()
+            },
+        ]))
+    }
+
+    /// Benny watches the rabbit laugh and loses his temper.
+    ///
+    /// The bob is torn down first and deliberately. It is a `moveBy` repeating
+    /// for ever and the recoil is a `moveBy` too — both write `position`, and
+    /// left running they argue, which is the same trap the saucer's hover hit
+    /// on its way out.
+    ///
+    /// Size and anchor are set along with the texture, never without it. These
+    /// sheets are a different shape from the launch sheet — 1.71 against 0.99 —
+    /// and carry the rocket somewhere else on the canvas, so setting a texture
+    /// on its own would both squash him and jump him a sixth of his height.
+    private func startAnger(_ flier: SKSpriteNode) {
+        guard let first = AngerArt.frames.first else { return }
+        flier.removeAllActions()
+        wear(first, on: flier)
+
+        // Sinks as he winds up, jerks back as the burst goes off — the drift
+        // taken out of the sheet, put back with a shape.
+        let down = SKAction.moveBy(x: 0, y: -Rabbit.recoil, duration: Rabbit.angry * 0.7)
+        down.timingMode = .easeIn
+        let up = SKAction.moveBy(x: 0, y: Rabbit.recoil, duration: Rabbit.angry * 0.3)
+        up.timingMode = .easeOut
+
+        flier.run(.animate(with: AngerArt.frames, timePerFrame: Rabbit.angryFrame))
+        flier.run(.sequence([down, up]))
+    }
+
+    /// And composes himself. This is the face the flying phase is played on.
+    private func settle(_ flier: SKSpriteNode) {
+        guard let serious = AngerArt.serious else { return }
+        flier.removeAllActions()
+        wear(serious, on: flier)
+
+        let bob = SKAction.sequence([
+            .moveBy(x: 0, y: Flight.bob, duration: Flight.bobTime),
+            .moveBy(x: 0, y: -Flight.bob, duration: Flight.bobTime),
+        ])
+        bob.timingMode = .easeInEaseOut
+        flier.run(.repeatForever(bob))
+    }
+
+    /// Puts one of `AngerArt`'s poses on the flier without moving or resizing
+    /// the rocket inside it.
+    ///
+    /// The one place the three sheets are reconciled: they are the same drawing
+    /// at different resolutions and croppings, so the sprite is sized by
+    /// `widthInFlyFrames` and hung from `AngerArt.nose`, both measured off the
+    /// rocket's nose cone. Change one without the other and he changes size or
+    /// jumps.
+    private func wear(_ texture: SKTexture, on flier: SKSpriteNode) {
+        let width = Launch.houseWidth * LaunchArt.flyInHouses * AngerArt.widthInFlyFrames
+        flier.anchorPoint = AngerArt.nose
+        flier.size = CGSize(width: width, height: width / AngerArt.aspect)
+        flier.texture = texture
+    }
+
+    /// The saucer, sized against Benny and parked off the left-hand edge.
+    ///
+    /// `nil` when the sheet isn't there — `numberedTextures` comes back empty
+    /// rather than handing out a placeholder, which is the point of it.
+    private func makeUfo(nextTo flier: SKSpriteNode) -> SKSpriteNode? {
+        guard let first = UfoArt.frames.first, UfoArt.frames.count > 1 else { return nil }
+
+        let width = flier.size.width * Rabbit.widthInFliers
+        let ufo = SKSpriteNode(
+            texture: first,
+            size: CGSize(width: width, height: width / UfoArt.aspect)
+        )
+        ufo.name = "ufo"
+        ufo.zPosition = 11  // over Benny, who passes below him
+        ufo.position = CGPoint(x: -width, y: Rabbit.height)
+        return ufo
+    }
+
+    /// Lets the phase run for a while and then ends it, until there is
+    /// something up here to play against.
+    private func endFlightAfterLook() {
+        run(.sequence([
+            .wait(forDuration: Flight.look),
+            .run { [weak self] in self?.endGame(crashed: false, finale: true) },
+        ]))
     }
 
     // MARK: - Contacts
@@ -3911,11 +4512,26 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// by a label. Three or four frames of nothing is all it takes.
     private static let crashHold: TimeInterval = 0.09
 
-    private func endGame() {
+    /// Ends the run.
+    ///
+    /// `crashed` is what separates hitting something from simply arriving at the
+    /// end of what is built. The flying phase runs out rather than killing him,
+    /// and giving that the full treatment — the crash sound, the haptic, the
+    /// squash and the white flash — reads as a fault in a shot where nothing
+    /// went wrong.
+    ///
+    /// `finale` is the other half of that: reaching the end of the story is not
+    /// losing, and "Good boy! Tap to retry" is the wrong thing to say about it.
+    /// Both default to the crash, so the twenty-odd other ways a run can end are
+    /// untouched.
+    private func endGame(crashed: Bool = true, finale: Bool = false) {
         guard !isGameOver else { return }
         isGameOver = true
         physicsWorld.speed = 0
         scenery.isPaused = true
+        // He is still flying when the phase runs out, and a frozen scene with
+        // one thing in it still moving reads as the game having lost track.
+        childNode(withName: "flier")?.isPaused = true
         // Otherwise he keeps galloping on the spot in the frozen scene.
         dog.childNode(withName: "body")?.isPaused = true
         // Paused as well as stopped: removing the actions holds the obstacle
@@ -3927,34 +4543,84 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             node.isPaused = true
         }
 
-        Sfx.shared.play(.crash)
-        Haptics.crash()
-        // Harder than a landing, and the last thing he does. Actions still run
-        // in a scene whose *physics* is stopped, which is what lets the impact
-        // play out over a world that has already frozen.
-        squash(xScale: 1.35, yScale: 0.68)
-        flash()
+        if crashed {
+            Sfx.shared.play(.crash)
+            Haptics.crash()
+            // Harder than a landing, and the last thing he does. Actions still
+            // run in a scene whose *physics* is stopped, which is what lets the
+            // impact play out over a world that has already frozen.
+            squash(xScale: 1.35, yScale: 0.68)
+            flash()
+        }
 
-        messageLabel = SKLabelNode(fontNamed: "AvenirNextCondensed-Heavy")
-        messageLabel.text = "Good boy! Tap to retry"
-        messageLabel.fontSize = 30
-        messageLabel.fontColor = Palette.ink
-        messageLabel.horizontalAlignmentMode = .center
-        // Centred vertically, the one part of the scene `.aspectFill` never crops.
-        // On the camera, at its origin, which is the middle of the frame
-        // wherever the frame happens to be. A crash can't move it, but a launch
-        // can: end a run up in the sky and a scene-positioned label would be
-        // 550 units below the bottom of the screen.
-        messageLabel.position = .zero
-        messageLabel.zPosition = 50
-        messageLabel.setScale(0)
-        (camera ?? self).addChild(messageLabel)
-        messageLabel.run(.sequence([
-            .wait(forDuration: Self.crashHold),
-            .scale(to: 1, duration: 0.25),
-        ]))
+        if finale {
+            showFinale()
+        } else {
+            messageLabel = SKLabelNode(fontNamed: "AvenirNextCondensed-Heavy")
+            messageLabel.text = "Good boy! Tap to retry"
+            messageLabel.fontSize = 30
+            messageLabel.fontColor = Palette.ink
+            messageLabel.horizontalAlignmentMode = .center
+            // Centred vertically, the one part of the scene `.aspectFill` never
+            // crops. On the camera, at its origin, which is the middle of the
+            // frame wherever the frame happens to be. A crash can't move it, but
+            // a launch can: end a run up in the sky and a scene-positioned label
+            // would be 550 units below the bottom of the screen.
+            messageLabel.position = .zero
+            messageLabel.zPosition = 50
+            messageLabel.setScale(0)
+            (camera ?? self).addChild(messageLabel)
+            messageLabel.run(.sequence([
+                .wait(forDuration: Self.crashHold),
+                .scale(to: 1, duration: 0.25),
+            ]))
+        }
 
+        // On both paths. Reaching the end of the story means a score of at least
+        // `Launch.atScore`, so leaving it out here would make the best run
+        // anybody can have the one that never reaches the leaderboard.
         onGameOver?(score)
+    }
+
+    /// The card the game ends on — see `Finale`.
+    ///
+    /// One label per line, stacked and then shifted so the block as a whole sits
+    /// on the camera's centre rather than hanging from its first line. Hung on
+    /// the camera for the same reason the retry message is: the run ends a
+    /// thousand points up in the sky, and anything positioned in the scene would
+    /// be left behind on the ground.
+    private func showFinale() {
+        // Walk down the lines to find each centre, then recentre the block.
+        var centres: [CGFloat] = []
+        var cursor: CGFloat = 0
+        for line in Finale.lines {
+            cursor -= line.drop
+            centres.append(cursor)
+        }
+        let shift = -((centres.first ?? 0) + (centres.last ?? 0)) / 2
+
+        for (line, centre) in zip(Finale.lines, centres) {
+            let isHeadline = line.size == Finale.lines.first?.size
+            let label = SKLabelNode(
+                fontNamed: isHeadline ? "AvenirNextCondensed-Heavy"
+                                      : "AvenirNextCondensed-Medium")
+            label.text = line.text
+            label.fontSize = line.size
+            label.fontColor = Palette.ink
+            label.horizontalAlignmentMode = .center
+            label.verticalAlignmentMode = .center
+            label.position = CGPoint(x: 0, y: centre + shift)
+            label.zPosition = 50
+            label.setScale(0)
+            (camera ?? self).addChild(label)
+            label.run(.sequence([
+                .wait(forDuration: Self.crashHold),
+                .scale(to: 1, duration: 0.25),
+            ]))
+            // Kept so the scene holds a reference to one of them, the way it
+            // does for the retry message.
+            if isHeadline { messageLabel = label }
+        }
     }
 
     /// A frame or two of white over the whole scene.
@@ -4022,8 +4688,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         launchBraking = false
         hasLaunched = false
         launch = nil
-        // `removeAllChildren` has already taken the node; this is so the scene
-        // isn't left holding a reference to it until `build` makes a new one.
+        isFlying = false
+        // `removeAllChildren` has already taken these; this is so the scene
+        // isn't left holding references to them until `build` makes new ones.
+        highSky = nil
         camera = nil
         gameSpeed = Layout.openingSpeed
         lastUpdateTime = 0
