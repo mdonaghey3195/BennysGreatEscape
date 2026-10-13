@@ -92,13 +92,28 @@ private enum Layout {
     /// authored. The line Benny's head is checked against at the apex.
     static var visibleTop: CGFloat { sceneSize.height - visibleInsetY }
 
-    /// Where the dog and every obstacle stand.
+    /// Where the dog and every obstacle stand — and, through
+    /// `BackdropArt.bottomY`, where the painting behind them hangs from.
     ///
-    /// Just under a third of the way up what is actually shown — 109 above the
-    /// visible bottom edge of 66, in a band 368 tall. Portrait had it at 35%,
-    /// and the difference is sky that landscape can no longer afford: the
-    /// headroom above this is what a jump has to fit inside.
-    static let groundTop: CGFloat = 175
+    /// That second job makes this the one place the whole scene can be slid up
+    /// or down. Everything vertical in the game derives from it, the scenery
+    /// included, so moving it moves the world and the countryside together and
+    /// nothing comes off the plane it was staged on.
+    ///
+    /// Which is the hard-won part. `BackdropArt.standFraction` also moves the
+    /// painting and looks like the same knob, and it is not: it slides the
+    /// picture *underneath* a world that stays put. Reaching for it to drop the
+    /// scene left the dog house, the obstacles and Benny standing seventeen
+    /// units further back up the grass than they were drawn to sit, with the
+    /// house's feet in the middle of the turf instead of at its front edge.
+    ///
+    /// A quarter of the way up what is actually shown — 91 above the visible
+    /// bottom edge of 66, in a band 368 tall. It was 175 until the repainted
+    /// sky arrived with clouds near the top of its lowest band; eighteen units
+    /// down is what stops the screen's top edge slicing them, and it buys
+    /// eighteen units of jump headroom on the way past. Portrait had this at
+    /// 35%, and the difference is sky that landscape can no longer afford.
+    static let groundTop: CGFloat = 157
 
     /// Sized off the collar, which is the one part of the drawing that keeps a
     /// fixed size whatever Benny's doing — matching canvas widths would shrink
@@ -606,13 +621,32 @@ private enum BackdropArt {
     /// where to take it from were found by sliding the source over itself —
     /// see the script, which prints how much better the join it chose is than
     /// the worst one available.
-    static let aspect: CGFloat = 1.9174
+    static let aspect: CGFloat = 0.5880
+
+    /// Down from the top of the crop: the top of the weather.
+    ///
+    /// Measured, like everything else here, and printed by the cutter —
+    /// `cloudLine` in `Art/CropBackground.swift` reports the highest row
+    /// carrying cloud every time the backdrop is cut. The launch climbs to this
+    /// and stops, so a repainted sky moves the top of the shot with it instead
+    /// of leaving the rocket hanging wherever a number typed in last year
+    /// happened to put it.
+    ///
+    /// It is printed rather than measured by hand because it moves further than
+    /// anyone expects. The painting this came from was handed over as a tweak to
+    /// one cloud and shifted the ceiling ninety-one rows, which is about forty
+    /// units of climb.
+    static let cloudCeilingFraction: CGFloat = 0.3960
+
+    /// That row in scene coordinates — the height at which the sky runs out of
+    /// weather.
+    static var cloudCeiling: CGFloat { bottomY + height * (1 - cloudCeilingFraction) }
 
     /// Down from the top of the crop: the near and far edges of the grass, and
     /// the band of flat sky the two scrolling layers are cut at.
-    static let grassLineFraction: CGFloat = 0.5098
-    static let earthLineFraction: CGFloat = 0.6152
-    static let skySplitFraction: CGFloat = 0.3098
+    static let grassLineFraction: CGFloat = 0.8497
+    static let earthLineFraction: CGFloat = 0.8820
+    static let skySplitFraction: CGFloat = 0.7910
 
     /// How far down the grass everything stands. Nought is its near edge, one
     /// the lip of the cut earth.
@@ -622,6 +656,15 @@ private enum BackdropArt {
     /// started, the bush line sits at Benny's heels and the whole flowered
     /// strip lies in front of him untouched, and he reads as pressed against a
     /// hedge rather than running through a park.
+    ///
+    /// **Not** the way to slide the scene up or down, however much it looks
+    /// like it. This moves the painting *relative to* everything standing on
+    /// it: Benny and the obstacles are staged against `Layout.groundTop`, which
+    /// does not follow, so turning this down drops the countryside and leaves
+    /// the whole cast planted further back up the grass — the dog house ends up
+    /// mid-turf with a band of field in front of its feet. `Layout.groundTop`
+    /// is the knob that moves both at once; this one only ever changes where in
+    /// the grass they stand.
     static let standFraction: CGFloat = 0.5
 
     /// The row of the painting the game is played on, and so the row that has
@@ -636,22 +679,35 @@ private enum BackdropArt {
         grassLineFraction + standFraction * (earthLineFraction - grassLineFraction)
     }
 
-    /// How tall the whole crop is drawn, in scene points.
+    /// How much field there is to stand on, in scene points — the strip between
+    /// the near edge of the grass and the lip of the cut earth.
     ///
-    /// Not picked — the larger of the two heights it has to reach. Above the
-    /// line they stand on the painting has to fill the scene to its top, and
-    /// below it, down to the bottom; whichever asks for more decides, and the
-    /// other is covered with room to spare. Here it is the ground that asks:
-    /// the painting carries far more sky than field, so the sky it doesn't need
-    /// runs off the top of the scene and is never seen.
+    /// This is what sets the whole painting's scale now, and it is the number to
+    /// hold if the backdrop is ever repainted: everything the game is staged
+    /// against hangs off it, and it has been 60.9 since the world went
+    /// landscape.
+    static let turfBand: CGFloat = 60.9
+
+    /// How tall the whole crop is drawn, in scene points — whatever it takes to
+    /// give `turfBand` the size it has always had.
     ///
-    /// Which is why standing them further down the grass makes the whole
-    /// painting bigger — there is less of it left below them to reach the
-    /// bottom of the scene with.
-    static var height: CGFloat {
-        max((Layout.sceneSize.height - Layout.groundTop) / anchorFraction,
-            Layout.groundTop / (1 - anchorFraction))
-    }
+    /// It used to be the larger of two demands: fill the scene above the line
+    /// they stand on, or fill it below. That worked for exactly as long as the
+    /// painting's sky was the short side, because then the sky was the one
+    /// asking and the ground came along with room to spare.
+    ///
+    /// The tall painting inverts it. Give the scene three times the sky and the
+    /// *ground* becomes the binding term, and the picture is scaled to whatever
+    /// makes a ground-height of field reach the bottom — which came out a third
+    /// smaller, shrinking the turf, the hills, the repeat and Benny's footing
+    /// with it. Nothing about the game had changed; only which way round the
+    /// `max` fell.
+    ///
+    /// So the band is pinned and the sky is allowed to come out as tall as it is
+    /// drawn, which is the whole point of the new painting. At the figures above
+    /// that is 1885 points, of which 1632 stand above the ground line — against
+    /// 325 before, and none of it reachable.
+    static var height: CGFloat { turfBand / (earthLineFraction - grassLineFraction) }
 
     /// One repeat, in scene points — and so how far the world travels before it
     /// comes round again.
@@ -1402,7 +1458,7 @@ private enum Cliff {
     /// sprite's own top edge goes.
     ///
     /// Not a guess: `Layout.groundTop` isn't the top of the grass, it's
-    /// `BackdropArt.standFraction` (half) of the way *through* it — the same
+    /// `BackdropArt.standFraction` of the way *through* it — the same
     /// derivation `BackdropArt.anchorFraction` itself uses — so the true
     /// grass line sits this far above it:
     static let grassRise: CGFloat = BackdropArt.landSize.height
@@ -1468,6 +1524,570 @@ private enum Palette {
     static let field = SKColor(red: 0.34, green: 0.19, blue: 0.08, alpha: 1)
 }
 
+/// The drawings the launch is made of, and where they sit against each other.
+///
+/// All of it measured off the five sheets and printed by `Art/CutLaunch.swift`,
+/// in the same arrangement `IntroArt` uses: this enum holds nothing but
+/// fractions read off the art, and `Launch` next door turns them into positions
+/// and pacing.
+///
+/// Four clips arrived and only two of them are clips. The climb sheet's every
+/// frame separates into a house and a rocket of *exactly* 345,414 pixels — the
+/// same number five times over, which is one drawing being moved rather than
+/// five drawings. So the rocket is a single sprite flown up from inside the
+/// house, and the house's own drawing does the occluding that the rise sheet's
+/// early frames are a picture of. See the script's header.
+private enum LaunchArt {
+    static let slideFrames = numberedTextures("launch_slide")
+    static let roofFrames = numberedTextures("launch_roof")
+    static let flyFrames = numberedTextures("launch_fly")
+    static let rocket = load("launch_rocket")
+
+    /// The house alone, for the run in. Cut from the slide sheet's first frame
+    /// and onto the slide's own canvas, so the changeover into the clip moves
+    /// nothing. Not from its last frame, which looks like the obvious choice and
+    /// has Benny's tail still hanging out of the door.
+    static let houseShut = load("launch_house_shut")
+
+    /// The slide's canvas, in fractions of itself: where the house stands on it,
+    /// how wide the house is across it, and where the drawn Benny starts —
+    /// which is the mark the real one is swapped at. Its ground line is the
+    /// canvas's own bottom row, so an anchor of 0 puts it on the turf.
+    static let slideHouseLeft: CGFloat = 0.448
+    static let slideHouseWidth: CGFloat = 0.546
+    static let slideBennyCentre: CGFloat = 0.174
+
+    /// How far each frame of the slide moves him, across the canvas, and the
+    /// sum of them.
+    ///
+    /// The steps are what the clip is timed off, because the art does not space
+    /// him quite evenly — his longest frame covers more than twice his shortest.
+    /// Played at a flat frame time that becomes a lurch; see
+    /// `Launch.slideBeats(at:)`.
+    ///
+    /// They used to read as far more uneven than this, and most of that was a
+    /// bug rather than the drawing: the frames were being registered backwards,
+    /// so the house slid about underneath him and his measured travel went with
+    /// it. These come off art that is actually lined up.
+    ///
+    /// Measured off his tail rather than his centre, because from the third
+    /// frame on he overlaps the house and only his trailing edge can be told
+    /// from it; `Art/CutLaunch.swift` explains why.
+    static let slideSteps: [CGFloat] = [0.093, 0.077, 0.072, 0.086, 0.042, 0.100, 0.067, 0.002]
+    static let slideSpan: CGFloat = 0.538
+
+    /// The roof's canvas, stated the same way. Its last frame is also the house
+    /// the rocket climbs out of — there is no separate drawing of that, on
+    /// purpose: a second copy would be a second thing to keep in agreement, and
+    /// the swap onto it would be exactly where they disagreed.
+    static let roofHouseLeft: CGFloat = 0.009
+    static let roofHouseWidth: CGFloat = 0.887
+
+    /// The climb, in house widths from the house's ground-left corner.
+    ///
+    /// It starts on the floor of the house — the one place "inside" can mean
+    /// without guessing. Sideways it barely moves: 0.18 to 0.23 across the climb
+    /// sheet's five frames, so the ascent is vertical and that spread is just
+    /// drawing.
+    ///
+    /// Where it *stops* is not taken from the art — see `Launch.apex`. The climb
+    /// sheet carries the rocket 2.29 house widths up, which was once a taller
+    /// shot than this game had sky for; now the sky goes to 1807 and the limit
+    /// is the shot rather than the frame.
+    static let rocketFrom = CGPoint(x: 0.215, y: 0.000)
+
+    /// Sizes, each against the thing it hangs off, so the whole clip follows
+    /// Benny — the one thing in it the game already decides the size of.
+    static let houseInDogs: CGFloat = 1.617
+    static let rocketInHouses: CGFloat = 0.503
+
+    /// The flight sheet is drawn at its own scale, so its canvas is sized to put
+    /// the first pose — the same upright rocket the climb ends on — at exactly
+    /// the height `rocket` renders. Swapping between the two then doesn't resize
+    /// the rocket in the middle of the shot.
+    static let flyInHouses: CGFloat = 0.878
+
+    /// Where the rocket's nose cone sits on this sheet's canvas, as a fraction
+    /// across and up.
+    ///
+    /// The flier is anchored here rather than at its centre, because the clip
+    /// swaps him onto `AngerArt`'s sheets, and those put the nose somewhere
+    /// else entirely — 0.87 across and 0.22 up, against 0.91 and 0.38 here. A
+    /// centred anchor would jump the rocket by a sixth of its height on the
+    /// swap, which is about fourteen points and plainly visible. Anchored on
+    /// the nose, every pose hangs from the same point and nothing moves.
+    static let flyNose = CGPoint(x: 0.9050, y: 0.3830)
+
+    /// Same reasoning as `ObstacleArt.load` and `DogArt`: `SKTexture(imageNamed:)`
+    /// hands back a placeholder for a name that isn't there, so it can't tell you
+    /// the art has gone missing. A nil here means the clip doesn't play.
+    private static func load(_ name: String) -> SKTexture? {
+        UIImage(named: name).map(SKTexture.init(image:))
+    }
+}
+
+/// The rabbit's saucer, four frames of him laughing.
+///
+/// The same rabbit from the opening clip, which is the whole joke: Benny chased
+/// him across a park, lost him, got into a rocket, and the rabbit is already up
+/// here and finds it funny.
+///
+/// Cut by `Art/CutRabbit.swift`, which hangs every frame from the saucer's rim.
+/// The sheet draws them at four different heights, and a sprite swapping between
+/// them in place would jump forty-three pixels — not a subtle fault on a craft
+/// meant to hang in the air.
+private enum UfoArt {
+    /// `ufo_0` is the calm pose he flies in on; 1 to 3 are the laugh.
+    static let frames: [SKTexture] = numberedTextures("ufo")
+
+    /// Printed by the cutter.
+    static let aspect: CGFloat = 1.3848
+}
+
+/// Benny losing his temper, and the face he settles into afterwards.
+///
+/// Cut by `Art/CutAngry.swift`, which hangs all seven poses — six angry frames
+/// and the serious one — from the rocket's nose cone. The sheet draws the craft
+/// sinking twenty-four pixels across the six and snapping back eighteen on the
+/// last, which is both a visible fault and exactly the shape a registration bug
+/// takes; it is taken out there and a recoil is put back here, where it can be
+/// shaped.
+private enum AngerArt {
+    /// Six frames: tongue-out happy, through gritted teeth, to a burst of anger
+    /// over his head.
+    static let frames: [SKTexture] = numberedTextures("benny_angry")
+
+    /// Mouth closed, eyes forward. What the flying phase is played on.
+    static let serious: SKTexture? = UIImage(named: "benny_serious").map(SKTexture.init(image:))
+
+    /// Printed by the cutter, and shared by all seven — they are installed on
+    /// one common canvas, which is the whole point of registering them.
+    static let aspect: CGFloat = 1.7090
+    static let nose = CGPoint(x: 608.0 / 699.0, y: 1 - 321.0 / 409.0)
+
+    /// How wide these are drawn against the launch sheet's flight pose.
+    ///
+    /// Measured on the nose cone, the one feature that is the same object in
+    /// all of them: it is 0.13947 of the launch canvas and 0.13877 of this one.
+    /// Half a percent, so this changes almost nothing — but it is the number
+    /// that would matter if either sheet were ever recropped, and guessing it
+    /// is how Benny ends up a different size mid-shot.
+    static let widthInFlyFrames: CGFloat = 1.0050
+}
+
+/// The card the game ends on, now that there is an end to reach.
+///
+/// V1 ships one story beat: the run, the launch, and the cutscene where the
+/// rabbit laughs and gets away. Someone who reaches it has finished everything
+/// there is, and used to be told "Good boy! Tap to retry" — the crash message,
+/// which says nothing about why the game stopped.
+///
+/// The cutscene has already done the work: the rabbit escaped and Benny is
+/// furious. That is a cliffhanger whether or not it is labelled one, so the card
+/// names it rather than reading like release notes.
+private enum Finale {
+    /// Every line of the card, with the size it is drawn at and how far its
+    /// centre sits below the line before it.
+    ///
+    /// A node per line, which is not the obvious way to build this and is the
+    /// only way that works. `SKLabelNode` will happily hold all four lines, but
+    /// it left-aligns them inside the block whatever `horizontalAlignmentMode`
+    /// is set to — measured on screen, the headline landed centred at 400 while
+    /// "is coming soon" and "Tap to play again" sat at 369 and 374. It also
+    /// draws every line at one size, where the headline wants to be nearly
+    /// twice the rest.
+    ///
+    /// Laying the lines out here also makes the spacing a number rather than a
+    /// consequence. The first attempt left three points between the headline's
+    /// bottom and the body's top, which on screen read as one crowded block.
+    static let lines: [(text: String, size: CGFloat, drop: CGFloat)] = [
+        ("To be continued…", 38, 0),
+        ("More of Benny's escape", 20, 48),
+        ("is coming soon", 20, 26),
+        ("Tap to play again", 20, 48),
+    ]
+}
+
+/// How the flying phase is paced.
+///
+/// One place for its numbers from the start, the way `Intro` and `Launch` each
+/// have one, so that when lanes and obstacles arrive they have somewhere to go
+/// that isn't the middle of a function.
+private enum Flight {
+    /// How long Benny takes to come in from off the left and settle at
+    /// `Layout.dogX`, where he runs on the ground. Eased out, so he arrives
+    /// rather than stops.
+    static let entry: TimeInterval = 0.7
+
+    /// A slow rise and fall while he flies, and how long each half takes.
+    /// Small: this is the difference between flying and being a sticker on a
+    /// moving picture, not a manoeuvre.
+    static let bob: CGFloat = 14
+    static let bobTime: TimeInterval = 1.3
+
+    /// How long Benny flies on after the rabbit has gone, before the card.
+    ///
+    /// It was six seconds, which was padding from when this phase had nothing in
+    /// it at all. Now the card is what it was waiting for, and six seconds of a
+    /// dog flying at nothing in particular is six seconds of the player
+    /// wondering whether the game has stopped working. Long enough to let the
+    /// serious pose land, and no longer.
+    static let look: TimeInterval = 1.8
+}
+
+/// The clip the flying phase opens on.
+///
+/// Beats rather than one duration, because each waits on the one before it and
+/// the whole thing is read in order — the same arrangement `Intro` and `Launch`
+/// use for the other two clips in the game.
+private enum Rabbit {
+    /// How big the saucer is, in Bennys-on-a-rocket. Hung off him rather than
+    /// typed in points so the two keep their relative size if he is ever
+    /// resized — the same stance `LaunchArt` takes with the dog house.
+    ///
+    /// A matched pair: 135 units against his 136, so neither craft outranks the
+    /// other. It was 1.6, which put the saucer at 1.66x his drawn width and
+    /// read even larger than that — his canvas is only 56% full vertically
+    /// where the saucer's is 100% full, so comparing canvases flatters it and
+    /// comparing drawings is the only honest measure.
+    static let widthInFliers: CGFloat = 0.95
+
+    /// How high he hangs, in scene points. Above the middle, where Benny
+    /// arrives, so the rabbit is looking *down* at him.
+    static let height: CGFloat = 300
+
+    /// In from off the left, and where he stops.
+    static let flyIn: TimeInterval = 1.4
+    static var stopX: CGFloat { Layout.sceneSize.width / 2 }
+
+    /// A beat with the rabbit alone on screen before Benny turns up, so the
+    /// shot reads as the rabbit being here first and Benny arriving — which is
+    /// the order the joke needs.
+    static let beforeBenny: TimeInterval = 0.25
+
+    /// And another after Benny has settled, before the laugh. This one is the
+    /// rabbit noticing him.
+    static let beforeLaugh: TimeInterval = 0.5
+
+    /// The laugh, as an order to play the poses in.
+    ///
+    /// Up through all of them and then back and forth across the top two,
+    /// rather than all of them and then the last few on repeat. The repeat is
+    /// what it was, and it sawtoothed: the sheet draws his muzzle at four
+    /// different widths — 193, 210, 202, 218, a 13% spread, where his ears and
+    /// skull are pixel-identical — so cycling the last three snapped him from
+    /// the widest pose back to a narrow one three times over, and the face read
+    /// as pulsing rather than laughing.
+    ///
+    /// A ping-pong matches every rise with the same fall back down. The muzzle
+    /// still moves, because it is drawn that way and no amount of ordering can
+    /// rescale part of a sprite, but it walks instead of snapping.
+    ///
+    /// Built from the sheet rather than typed, so a redraw with a different
+    /// number of poses can't index off the end of it.
+    static var laughOrder: [Int] {
+        let last = UfoArt.frames.count - 1
+        guard last >= 2 else { return Array(0...max(0, last)) }
+        // 0,1,…,last, then (last-1, last) twice — up, and back and forth.
+        return Array(0...last) + [last - 1, last, last - 1, last, last - 1]
+    }
+
+    static let laughFrame: TimeInterval = 0.12
+    static var laughing: TimeInterval { TimeInterval(laughOrder.count) * laughFrame }
+
+    /// And away to the right. He came in from the left and carries on rather
+    /// than turning round, which keeps him going the way the world goes.
+    static let away: TimeInterval = 1.0
+
+    /// Benny's temper, which starts the instant the laugh ends — so the rabbit
+    /// is bolting while he is still gritting his teeth, rather than waiting
+    /// politely for him to finish.
+    static let angryFrame: TimeInterval = 0.13
+    static var angry: TimeInterval { TimeInterval(AngerArt.frames.count) * angryFrame }
+
+    /// And a beat held on the burst before he composes himself.
+    ///
+    /// Longer than the wind-up that gets him there, deliberately. It was 0.45 —
+    /// shorter than the six frames it followed — and he looked like he got over
+    /// it the moment he arrived. Anger that takes 0.78s to build and 0.45s to
+    /// drop reads as a flinch; holding it past the build is what makes it a
+    /// grudge.
+    ///
+    /// He is motionless through this, and that is fine rather than frozen: the
+    /// high sky is scrolling past him at `SkyArt.speed` the whole time, so the
+    /// shot still moves even though he doesn't.
+    static let hold: TimeInterval = 1.0
+
+    /// How far the rocket sinks as he winds up, and jerks back as the burst
+    /// goes off. This is the drift the cutter took out of the sheet, put back
+    /// deliberately: twenty-four pixels of a 371-pixel drawing is about five
+    /// points at the size he flies.
+    static let recoil: CGFloat = 5
+
+    /// A slow rise and fall while he waits and laughs, so the saucer reads as
+    /// hanging in the air rather than pinned to the glass.
+    static let hover: CGFloat = 9
+    static let hoverTime: TimeInterval = 0.9
+}
+
+/// The sky the flying phase is played against.
+///
+/// A single painting rather than the running game's pair of layers, because up
+/// here there is nothing to be in front of anything else: no ground to travel at
+/// the world's speed and no hills to lag behind it. One texture, tiled sideways,
+/// and that is the whole backdrop.
+///
+/// Cut by `Art/CropSky.swift`, which exists because `CropBackground` cannot do
+/// this one — that script's job is to find the grass line, the lip of the cut
+/// earth and the band of flat sky the layers split at, and this painting has no
+/// ground in it to find them in.
+private enum SkyArt {
+    /// Same stance as `BackdropArt.sheet` and for the same reason:
+    /// `SKTexture(imageNamed:)` hands back a placeholder for a name that isn't
+    /// there, so it can't tell you the art has gone missing.
+    static let sheet: SKTexture? = UIImage(named: "bg_sky").map(SKTexture.init(image:))
+
+    /// Printed by the cutter. One repeat of the painting.
+    static let aspect: CGFloat = 2.6741
+
+    /// Drawn to the *authored* height, not the visible one.
+    ///
+    /// `.aspectFill` crops the scene vertically by between nothing and
+    /// `Layout.visibleInsetY` depending on how square the device is, so a sky
+    /// sized to the 368 units a phone shows would come up short on an iPad and
+    /// leave `Palette.field` along the top and bottom. Sized to all 500, the
+    /// narrow case simply sees the middle of it.
+    static var height: CGFloat { Layout.sceneSize.height }
+    static var tileWidth: CGFloat { height * aspect }
+
+    /// Same derivation as `BackdropArt.stripCount`, same reason: enough copies
+    /// to cover the scene at every point in the scroll rather than at most of
+    /// them.
+    static var stripCount: Int {
+        max(2, Int((Layout.sceneSize.width / tileWidth).rounded(.up)) + 1)
+    }
+
+    /// Faster than the running game's clouds, which drift at 16 against a world
+    /// doing 300-odd. Up here the sky *is* the ground — it is the only thing
+    /// telling the player they are moving at all — so it travels at something
+    /// like flying speed.
+    static let speed: CGFloat = 150
+}
+
+/// How the launch is staged and paced — `Intro`'s job for the other clip.
+private enum Launch {
+    /// Where the running stops and the flying starts.
+    static let atScore = 100
+
+    /// Testing. Set to something small to reach the launch without playing a
+    /// hundred obstacles first; ships `nil`, the way `Cliff.debugSpawnAlways`
+    /// ships `false`. It moves the trigger and nothing else, so what you get is
+    /// the real launch and not a debug approximation of one.
+    ///
+    /// Set to 5 while the clip is being worked on. Put it back to `nil` before
+    /// this ships — `atScore` below is the real figure and is deliberately left
+    /// alone, so turning the knob back is the only thing that has to happen.
+    static let debugAtScore: Int? = nil
+    static var trigger: Int { debugAtScore ?? atScore }
+
+    /// How big the dog house stands, from Benny's own length.
+    static var houseWidth: CGFloat { Layout.dogWidth * LaunchArt.houseInDogs }
+
+    /// How far the house still has to come when the wind-down begins.
+    ///
+    /// The one distance the whole hand-over is built on, and everything else is
+    /// set equal to it: it is how far Benny dashes, how far the clip carries
+    /// him, and how far apart the two trip points are. Winding down linearly
+    /// covers half what holding speed would, so a brake of `2 x slide` travels
+    /// exactly `speed x slide` — and the drawn dog lands on the real one only
+    /// if his dash covered the same ground. Deriving all three from this rather
+    /// than from the art's own travel is what keeps them equal when the floor
+    /// in `slideBeats` nudges the timing.
+    static func stopping(at speed: CGFloat) -> CGFloat {
+        speed * CGFloat(slide(at: speed))
+    }
+
+    /// The shortest a frame of the slide may be held.
+    ///
+    /// The art's last step is nothing at all — two of its frames put him in the
+    /// same place — and timing purely by distance would give that frame no
+    /// duration and nobody would ever see it. The floor costs a few percent of
+    /// drift on frames that barely move him, which is invisible; dropping a
+    /// drawing is not.
+    static let slideFloor: TimeInterval = 0.04
+
+    /// The slide, a texture and a duration at a time.
+    ///
+    /// Not `.animate(with:timePerFrame:)`, and this is the third and last thing
+    /// that was wrong with this clip. The frames are unevenly *drawn* — his step
+    /// runs 0.113, 0.100, 0.055, 0.051, 0.066, 0.094, 0.030, 0.000 — so timing
+    /// them evenly makes his speed swing by a factor of three against a house
+    /// arriving at a steady rate. On screen that came out as a lurch forward
+    /// fifteen units, forward eleven, back, back, forward ten, back twenty, at
+    /// about fourteen a second. A vibration, not a slide.
+    ///
+    /// Worse, it was front-loaded: the first two frames carry two fifths of his
+    /// travel in a fifth of the time, so the clip opened at roughly twice the
+    /// speed of the ground. That is the part that read as *fast*, and it is why
+    /// two rounds of measuring the total came out right while the thing still
+    /// looked wrong. The average was never the problem.
+    ///
+    /// Timing each frame by the ground it covers makes his velocity the world's
+    /// velocity at every instant, not just on aggregate, so the house's leftward
+    /// travel cancels it exactly and he holds still while it comes to him. The
+    /// frames that move him least are on screen least, which is the right way
+    /// round however odd it looks written down.
+    ///
+    /// `jumpArc` hand-rolls its frames for a closely related reason: that clip
+    /// is timed to an airtime, this one to a ground speed, and neither can be
+    /// said with one number.
+    static func slideBeats(at speed: CGFloat) -> [SKAction] {
+        let canvas = houseWidth / LaunchArt.slideHouseWidth
+        return LaunchArt.slideFrames.enumerated().map { index, texture in
+            // The last frame has no step after it; it is held by the beat that
+            // follows the clip.
+            let step = index < LaunchArt.slideSteps.count ? LaunchArt.slideSteps[index] : 0
+            let hold = max(slideFloor, TimeInterval(step * canvas / max(speed, 1)))
+            return .sequence([.setTexture(texture), .wait(forDuration: hold)])
+        }
+    }
+
+    /// How long the slide takes altogether — the sum of its own beats, so that
+    /// the wind-down can't drift out of step with it when the floor nudges one.
+    ///
+    /// Derived rather than declared, which was the fix before last. The clip
+    /// used to run on a fixed frame time *after* the world had been brought to
+    /// a stop for it, so the player watched the game halt, wait, and then play a
+    /// little film.
+    ///
+    /// It is `Intro.scrollSpeed`'s trick upside down. There the world's speed is
+    /// taken from the walk cycle so the man can't moonwalk against the grass;
+    /// here the cycle's speed is taken from the world so Benny can't.
+    static func slide(at speed: CGFloat) -> TimeInterval {
+        slideBeats(at: speed).reduce(0) { $0 + $1.duration }
+    }
+
+    /// And the wind-down is exactly twice that.
+    ///
+    /// Winding down linearly covers half the ground that holding speed would, so
+    /// a brake of `2 x slide` carries the house exactly as far as Benny walks
+    /// across the drawing — and the two cancel. He holds station on screen while
+    /// the house comes to him, which is what the game has always shown and what
+    /// the clip, left to itself, would contradict.
+    static func settle(at speed: CGFloat) -> TimeInterval { 2 * slide(at: speed) }
+
+    static let roofFrame: TimeInterval = 0.09
+
+    /// How much empty turf there is between the last obstacle and the dog
+    /// house, on top of whatever is still out there getting past Benny.
+    ///
+    /// The house used to arrive on the ordinary spawn beat, which meant it
+    /// could come over the right-hand edge while the player was still coming
+    /// down from jumping the thing before it. That reads as one more obstacle,
+    /// and the ending needs to read as the opposite — a clear stretch of
+    /// ground is what says the run is over before the house says it.
+    static let runway: TimeInterval = 1.1
+
+    /// A beat after he is inside and before the roof moves, so the two read as
+    /// cause and effect rather than one continuous shuffle.
+    static let beforeRoof: TimeInterval = 0.25
+
+    /// How long the slide takes to become the roof.
+    ///
+    /// A cross-fade covering a mismatch rather than a flourish: the two sheets
+    /// draw different dog houses and a straight cut between them pops. Short
+    /// enough to read as a beat, long enough to hide the change of shape.
+    static let blend: TimeInterval = 0.18
+
+    /// And another before the engine lights, which is the joke landing.
+    static let beforeLaunch: TimeInterval = 0.45
+
+    /// The climb out of the house. Eased in: the rocket is heaviest at the
+    /// bottom of it.
+    ///
+    /// It was 1.35 when the ceiling was the top of the screen and the whole
+    /// ascent was 250 units. At 1150 it needs to be an ascent rather than a
+    /// flick — and a touch faster per unit than it was at 700, which is what a
+    /// rocket that has been burning for three seconds should look like.
+    static let climb: TimeInterval = 3.0
+
+    /// How much clear air is left under the frame when the climb stops.
+    ///
+    /// The whole of what decides how high he goes. Thirty units is enough that
+    /// the last cloud has visibly gone rather than being half out of shot, and
+    /// little enough that it leaves on the frame the turn begins on.
+    static let cloudClearance: CGFloat = 30
+
+    /// Half of what the player can actually see, which is what the frame's edges
+    /// are measured from.
+    private static var halfFrame: CGFloat { Layout.visibleTop - Layout.sceneSize.height / 2 }
+
+    /// How much clear air is left over the rocket's nose at the top of the
+    /// climb, so the shot ends in open sky rather than against a ceiling.
+    static let noseMargin: CGFloat = 24
+
+    /// How far the camera rises: until its bottom edge has just cleared the top
+    /// of the painted weather, and not a unit further.
+    ///
+    /// This is the direction the derivation runs now, and it used to run the
+    /// other way — a chosen apex, with the camera worked out from it. That put
+    /// the frame seventy-three units above the last cloud instead of thirty, and
+    /// those extra units cost about half a second. They were worse than they
+    /// sound, because the high sky has faded up by then and is parented to the
+    /// camera: with the clouds gone and the new sky moving with the frame, there
+    /// is nothing on screen that can show the camera moving at all. The rocket
+    /// simply hung upright in flat blue until the turn came.
+    ///
+    /// So the shot's real constraint — be above the weather — decides the
+    /// camera, and the rocket is then placed inside the frame rather than the
+    /// frame around the rocket.
+    static var cameraRise: CGFloat {
+        BackdropArt.cloudCeiling + cloudClearance + halfFrame - Layout.sceneSize.height / 2
+    }
+
+    /// How far above the turf the rocket climbs, given a rocket that tall:
+    /// nose `noseMargin` under the top of the frame the camera has just reached.
+    ///
+    /// Its height has to be asked for rather than assumed, and that is the
+    /// lesson of the first attempt at this. The rocket is 139 units tall and
+    /// drawn from its foot; treating it as a point put the nose thirty units
+    /// past the top edge and sliced the dog's head off at the one moment of the
+    /// clip anybody is looking at him.
+    static func apex(forRocketOfHeight height: CGFloat) -> CGFloat {
+        Layout.sceneSize.height / 2 + cameraRise + halfFrame - noseMargin - height - Layout.groundTop
+    }
+
+    /// When in the climb the high sky starts coming up, and how long it takes.
+    ///
+    /// Tied to the one moment in the shot worth tying it to: the rocket's foot
+    /// passes the cloud ceiling at about 2.6 seconds of the climb — it is eased
+    /// in, so most of the distance is covered late — and that is when the air is
+    /// meant to change. Any earlier and the new sky is washing over cloud that
+    /// is still in frame.
+    ///
+    /// A cross-fade rather than a cut, and rather than a join. Stacking the two
+    /// paintings was the first thought and the measurement killed it: the
+    /// running sky's top row is (120, 202, 250) and the high sky's bottom row is
+    /// (164, 220, 252), a step of 44 out of 255 — and the wrong way round, since
+    /// the new one lightens as it descends. It is a complete sky in its own
+    /// right, not a continuation. Faded, though, both are blue and the change
+    /// reads as the air thinning.
+    /// Timed to *finish* at the top of the climb rather than to start at a
+    /// chosen moment. Landing it early was the other half of the dead beat: the
+    /// clouds were being covered over while they still had a way to fall, so
+    /// they vanished instead of leaving, and what was left was flat blue with
+    /// nothing happening in it.
+    static var skyFadeAfter: TimeInterval { max(0, climb - skyFade) }
+    static let skyFade: TimeInterval = 0.6
+
+    /// The turn from standing on its tail to flying level.
+    static let turnFrame: TimeInterval = 0.09
+
+    /// And away. Brisk: he has turned, the shot is over, and the flying phase
+    /// is what everyone is waiting for.
+    static let away: TimeInterval = 0.8
+}
+
 // MARK: - Scene
 
 final class GameScene: SKScene, SKPhysicsContactDelegate {
@@ -1525,6 +2145,59 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// while he is still the thing being watched. From the handoff on, when the
     /// world winds up to Benny's speed, it is exactly what leaves him behind.
     private var introRidesAlong = false
+
+    /// Whether the dog house has been spawned and is still scrolling in.
+    ///
+    /// Held apart from `isLaunching` because the two want different answers.
+    /// Once the house is on its way nothing more spawns behind it — it has to be
+    /// the next thing you see — but the player is still running, may still have
+    /// an obstacle to clear before it arrives, and should still be scored for
+    /// it. Only when it lands does the scene stop being a run.
+    private var launchIncoming = false
+
+    /// Whether the clip is playing and the scene belongs to it.
+    private var isLaunching = false
+    private var launch: SKNode?
+
+    /// The flying phase's backdrop, held on the camera rather than in the world.
+    ///
+    /// Which is the one design decision in here worth stating. The launch leaves
+    /// the camera 1036 units above where it started, and anything parented to
+    /// the scene has to know that to be drawn in the right place. Hang the sky
+    /// off the camera instead and its altitude stops existing as a problem: the
+    /// strips fill the frame wherever the frame happens to be, scroll sideways
+    /// on their own, and the camera can be put back to the middle of the scene
+    /// afterwards without a pixel of it moving.
+    private var highSky: SKNode?
+
+    /// Whether the flying phase has taken over.
+    ///
+    /// Not cosmetic. `update` is written against a world that exists — turf to
+    /// scroll, a dog to read a shadow off, a spawner feeding obstacles onto the
+    /// ground — and `beginPhaseTwo` takes all of that away. Left running it
+    /// quietly carried on, and the first thing it did up there was spawn a log
+    /// into the open sky.
+    private var isFlying = false
+
+    /// Whether the score has asked for the dog house but the spawner hasn't
+    /// stood it up yet.
+    private var launchPending = false
+
+    /// Whether Benny has set off for the door. A latch, like `launchBraking`
+    /// below, so the dash is started once and not restarted every frame it is
+    /// inside the trip distance.
+    private var launchDashed = false
+
+    /// Whether the world has started winding down for the house's arrival. A
+    /// latch, so the brake is applied once rather than re-applied every frame
+    /// for as long as the house is inside stopping distance.
+    private var launchBraking = false
+
+    /// Whether this run has already reached the launch. Per-run, like
+    /// `benchesSpawned` and unlike `hasSpawnedLowObstacle`: the trigger sits in
+    /// `scoreClearedObstacles`, which can clear several obstacles in one frame,
+    /// and without this the clip would be staged once for each of them.
+    private var hasLaunched = false
 
     /// How much of `gameSpeed` the turf is actually moving at. One, except
     /// during the clip: nothing at all behind the title card, a fifth of it while
@@ -1651,6 +2324,20 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         dog = makeDog()
         addChild(dog)
+
+        // The frame. At the centre of the authored scene it reproduces exactly
+        // what no camera at all was doing, so ordinary play is untouched — it
+        // exists so the launch has something to lift.
+        //
+        // Anything framed against the *screen* rather than the world has to hang
+        // off this instead of off the scene, or it is left behind the moment the
+        // camera moves: the retry message and the crash flash, both built later,
+        // are added to it and not to `self`.
+        let eye = SKCameraNode()
+        eye.position = CGPoint(x: Layout.sceneSize.width / 2,
+                               y: Layout.sceneSize.height / 2)
+        addChild(eye)
+        camera = eye
 
         // The clip is what stands behind the title card, so it is built with the
         // rest of the world rather than swapped in when Play is tapped. Not on a
@@ -1857,12 +2544,21 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private static let swipeThreshold: CGFloat = 24
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        // A tap during the clip skips it. It is the same four seconds every
-        // time Play is tapped, and there is no reason to sit through it twice.
+        // A tap during the opening clip skips it. It is the same four seconds
+        // every time Play is tapped, and there is no reason to sit through it
+        // twice.
         guard !isIntro else {
             finishIntro()
             return
         }
+        // The launch is the other way about: it is what a hundred obstacles were
+        // for, it happens once, and a stray tap is not a request to miss it. So
+        // this swallows the touch rather than acting on it.
+        guard !isLaunching else { return }
+        // And nothing up here answers to a gesture yet. The dog these would
+        // steer has been taken out of the scene by `beginPhaseTwo`, so without
+        // this a swipe goes looking for a jump on a detached physics body.
+        guard !isFlying else { return }
         guard !isGameOver else {
             restart()
             return
@@ -1873,7 +2569,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isIntro, !isGameOver, !gestureResolved,
+        guard !isIntro, !isLaunching, !isGameOver, !gestureResolved,
               let touch = touches.first, let origin = touchOrigin else { return }
 
         let dy = touch.location(in: self).y - origin.y
@@ -2313,6 +3009,16 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func spawnObstacle() {
+        // The dog house first, before the cliff is even rolled for. The score
+        // asked for it and it has to be the next thing over the edge — anything
+        // else arriving in front of it would be one more obstacle between the
+        // player and the ending they just earned.
+        if launchPending {
+            launchPending = false
+            sendInDogHouse()
+            return
+        }
+
         // The rare one: a gap Benny has to clear by jumping across rather than
         // over — see `Cliff`. There's no speed gate, because it doesn't need
         // one: the gap is *sized* from the speed it spawns at
@@ -2965,6 +3671,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let delta = min(currentTime - lastUpdateTime, 1.0 / 30)
         lastUpdateTime = currentTime
 
+        // Everything below this line belongs to the world `beginPhaseTwo` takes
+        // down. Nothing in the flying phase is stepped from here yet — the sky
+        // drifts on an action and Benny bobs on one — so this is the whole of
+        // what the flying phase asks of `update` for now.
+        guard !isFlying else { return }
+
         // The man is pinned to the turf rather than given a slide of his own, so
         // that when the world does start moving he can't moonwalk against it.
         let step = gameSpeed * worldScroll * CGFloat(delta)
@@ -2980,6 +3692,43 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             introRabbit?.position.x -= step
         }
 
+        // The dog house rides in on the same step everything else does, which is
+        // the whole point of it: at this stage it is a prop on the turf and not
+        // a cutscene.
+        if launchIncoming, let stage = launch {
+            stage.position.x -= step
+
+            // The brake and the clip start on the same frame, and that is the
+            // point: waiting out the wind-down and *then* playing the slide is
+            // what made the game appear to stop and think about it.
+            //
+            // Winding down linearly covers half the ground that holding speed
+            // would, so a brake of `2 x slide` carries the house exactly as far
+            // as Benny walks across the drawing — which means the trip point is
+            // simply his own travel, and from here to a standstill the two
+            // cancel and he holds station on screen.
+            // One slide-length before the brake: he sets off for the door, and
+            // arrives exactly as the clip takes over. The two trip points are a
+            // slide-length apart because the stage covers that in exactly the
+            // time the dash is given.
+            if !launchDashed, stage.position.x - launchMark <= 2 * Launch.stopping(at: gameSpeed) {
+                launchDashed = true
+                startLaunchDash()
+            }
+
+            if !launchBraking, stage.position.x - launchMark <= Launch.stopping(at: gameSpeed) {
+                launchBraking = true
+                let settle = Launch.settle(at: gameSpeed)
+                ramp(worldScroll: 0, over: settle)
+                scenery.run(.speed(to: 0, duration: settle))
+                landLaunch()
+                run(.sequence([
+                    .wait(forDuration: settle),
+                    .run { [weak self] in self?.launchIncoming = false },
+                ]))
+            }
+        }
+
         // Benny's legs keep pace with the ground. Without this the gait stays
         // fixed while the world accelerates, and by the top speed he looks like
         // he's being dragged along rather than running.
@@ -2990,8 +3739,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // Grounded and running only. The jump arc is timed to the airtime and
         // the slide to a distance, so both already account for `gameSpeed` —
         // scaling them again here would cut them short at the top speed.
+        // `worldScroll` as well as `gameSpeed`, so his legs wind down with the
+        // turf when the world brakes for the dog house instead of sprinting on
+        // the spot through it. It is 1 for the whole of an ordinary run, so this
+        // changes nothing anywhere else.
         dog.childNode(withName: "body")?.speed =
-            (isOnGround && !isSliding) ? gameSpeed / Layout.openingSpeed : 1
+            (isOnGround && !isSliding) ? gameSpeed / Layout.openingSpeed * worldScroll : 1
 
         // Everything above keeps the title screen alive; everything below is the
         // game proper and waits for the first tap.
@@ -3033,9 +3786,15 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // How far off the turf he is, as a fraction of a full jump — the one
         // thing the shadow has to say. Clamped because a fall through a gap
         // goes below the line and the apex can be passed on a retry frame.
-        let lift = min(1, max(0, (dog.position.y - Layout.dogGroundLine) / Layout.jumpHeight))
-        dogShadow.setScale(1 - (1 - Layout.shadowLiftScale) * lift)
-        dogShadow.alpha = 1 - (1 - Layout.shadowLiftAlpha) * lift
+        //
+        // Stops once he sets off for the door. From there the shadow is being
+        // faded out by `startLaunchDash`, and an alpha written every frame from
+        // here would simply overwrite the fade.
+        if !launchDashed {
+            let lift = min(1, max(0, (dog.position.y - Layout.dogGroundLine) / Layout.jumpHeight))
+            dogShadow.setScale(1 - (1 - Layout.shadowLiftScale) * lift)
+            dogShadow.alpha = 1 - (1 - Layout.shadowLiftAlpha) * lift
+        }
 
         // Falling through a cliff's gap is a fourth way to end a run,
         // alongside the physics contact `didBegin` already handles — there is
@@ -3046,7 +3805,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
 
         obstacleTimer += delta
-        if obstacleTimer >= obstacleInterval {
+        if !isLaunching, !launchIncoming, obstacleTimer >= obstacleInterval {
             obstacleTimer -= obstacleInterval
             spawnObstacle()
             // The floor is held above both the airtime and the slide, not
@@ -3076,6 +3835,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// One point per obstacle cleared. Counting frames instead would score twice
     /// as fast on a 120Hz display as on a 60Hz one.
     private func scoreClearedObstacles() {
+        // Once the launch is playing the run is over, and anything still
+        // drifting past the mark is scenery rather than an obstacle cleared.
+        guard !isLaunching else { return }
+
         enumerateChildNodes(withName: "obstacle") { node, _ in
             guard node.userData?["scored"] == nil, node.position.x < Layout.dogX else { return }
             let data = node.userData ?? NSMutableDictionary()
@@ -3085,6 +3848,607 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             self.score += 1
             self.onScoreChange?(self.score)
         }
+
+        // The end of the running, and the only place it can be: this is where
+        // the score changes. `>=` rather than `==` because two obstacles can
+        // clear in one frame and the exact number would be stepped over.
+        //
+        // It arms the spawner rather than starting the clip. The dog house is
+        // meant to arrive like everything else does — over the right-hand edge,
+        // on the turf, at the game's own cadence — so the score says *when* and
+        // the spawner says *how*.
+        if !hasLaunched, score >= Launch.trigger {
+            hasLaunched = true
+            launchPending = true
+            holdBackDogHouse()
+        }
+    }
+
+    // MARK: - The launch
+
+    /// Keeps the dog house back until the turf in front of Benny is clear.
+    ///
+    /// Nothing more spawns once the launch is armed, so the last obstacle of
+    /// the run is whatever was already in flight when the score tipped over —
+    /// and on the ordinary cadence the house would follow it by one interval,
+    /// arriving while the player was still landing. This waits for the
+    /// furthest thing out there to go past him and then holds off for
+    /// `Launch.runway` on top.
+    ///
+    /// Done by pushing the spawn timer negative, which is how the cliff buys
+    /// itself clear ground either side — see `spawnObstacle`. A debt on the
+    /// timer rather than a flag, so there is nothing extra to reset or forget.
+    private func holdBackDogHouse() {
+        var furthest = Layout.dogX
+        enumerateChildNodes(withName: "obstacle") { node, _ in
+            furthest = max(furthest, node.position.x)
+        }
+        let clearing = TimeInterval((furthest - Layout.dogX) / max(gameSpeed, 1))
+        obstacleTimer -= clearing + Launch.runway
+    }
+
+    /// Where the dog house comes to rest, once the world has finished winding
+    /// down: far enough right of `Layout.dogX` that the slide's first frame
+    /// would draw its dog exactly on Benny's mark.
+    ///
+    /// *Would*, not does — the hand-over happens a slide-length before the house
+    /// gets here, which is why `launchHandoff` exists and why Benny walks out to
+    /// meet it. This is still the number everything is measured from, because it
+    /// is the one the art defines; it is just not the point at which the swap
+    /// occurs.
+    ///
+    /// `drawnDogX`'s trick run backwards. There the scene asks the drawing where
+    /// its dog is so the real one can be put there; here it knows where its dog
+    /// is and places the drawing to match.
+    private var launchMark: CGFloat {
+        let canvas = Launch.houseWidth / LaunchArt.slideHouseWidth
+        return Layout.dogX - (LaunchArt.slideBennyCentre - LaunchArt.slideHouseLeft) * canvas
+    }
+
+    /// Where Benny is standing when the clip takes him over.
+    ///
+    /// Not `Layout.dogX`, which is where he has stood for the whole game. The
+    /// clip's first frame draws him a slide-length further on than his mark, and
+    /// the hand-over fires a slide-length before the house reaches `launchMark`
+    /// — the same distance, which is not a coincidence but the reason the two
+    /// can be made to meet at all. `startLaunchDash` walks him here so the
+    /// drawn dog appears exactly on the real one.
+    private var launchHandoff: CGFloat { Layout.dogX + Launch.stopping(at: gameSpeed) }
+
+    /// The last few strides, off his mark and towards his own front door.
+    ///
+    /// He has stood still for the whole game while the world came to him, so
+    /// this is the one time he moves, and it is worth saying why it has to
+    /// happen at all. The clip draws him a slide-length ahead of his mark;
+    /// something has to cover that ground before the clip starts, or he jumps
+    /// it in a single frame the moment it does. Either the house travels the
+    /// extra — which drags the launch hard against the left edge and under the
+    /// notch — or he does. He does, and it reads as a burst for home.
+    ///
+    /// Eased at both ends. He is at the world's speed on his mark, and back at
+    /// it once the clip has him, because the clip's own motion works out to
+    /// exactly the world's speed. So the burst has to grow out of one and settle
+    /// into the other, or the hand-over trades a jump in position for a jump in
+    /// velocity and nothing is gained.
+    ///
+    /// Its length is the time the house takes to cover the ground between the
+    /// two trip points, so it lands on the second one by construction rather
+    /// than by a timer that has to be kept in step with one.
+    private func startLaunchDash() {
+        let dash = SKAction.moveTo(x: launchHandoff, duration: Launch.slide(at: gameSpeed))
+        dash.timingMode = .easeInEaseOut
+        dog.run(dash)
+
+        // And the shadow goes, because this is the one moment it stops being
+        // his. It is drawn once at `Layout.dogX` and never moved again — which
+        // is right for every other second of the game, where Benny holds that
+        // mark and the world travels past him. The dash is the only time he
+        // leaves it, and the shadow stays behind: a dark ellipse sitting on
+        // bare turf while he runs off to the right, still there through the
+        // whole slide, still there with the door shut and nobody in shot.
+        //
+        // Faded rather than cut, over the dash he is already running. Cutting
+        // it works too and is one line shorter, but it pops on a frame where
+        // the eye is on him and nothing else is changing.
+        dogShadow.run(.fadeOut(withDuration: Launch.slide(at: gameSpeed) * 0.6))
+    }
+
+    /// Stands the dog house up off the right-hand edge and lets the turf bring
+    /// it in.
+    ///
+    /// Called from the spawner rather than from the score, so it arrives on the
+    /// game's own cadence and is simply the next thing over the edge — which is
+    /// the whole of what makes it feel like part of the run instead of an
+    /// announcement. It carries no physics body, like the cliff and for the same
+    /// reason: it is not something to be cleared.
+    private func sendInDogHouse() {
+        launchIncoming = true
+        stageLaunch(atX: Layout.spawnX)
+    }
+
+    /// Builds the clip on one node, with every sprite at that node's origin, so
+    /// that moving the node moves all of it. Starts showing nothing but the
+    /// house, shut.
+    private func stageLaunch(atX x: CGFloat) {
+        let stage = SKNode()
+        stage.zPosition = 9  // over the turf, under Benny — the intro's shelf
+        stage.position = CGPoint(x: x, y: Layout.dogGroundLine)
+        addChild(stage)
+        launch = stage
+
+        let houseWidth = Launch.houseWidth
+        let canvas = houseWidth / LaunchArt.slideHouseWidth
+
+        // What scrolls in. The same canvas as the slide's frames and the same
+        // house drawn on it, so when the clip starts this is swapped for frame
+        // zero and nothing whatever moves.
+        let shut = sprite(LaunchArt.houseShut, width: canvas, anchorX: LaunchArt.slideHouseLeft)
+        shut?.name = "shut"
+        shut.map(stage.addChild)
+
+        let slide = sprite(LaunchArt.slideFrames.first, width: canvas,
+                           anchorX: LaunchArt.slideHouseLeft)
+        slide?.name = "slide"
+        slide?.isHidden = true
+        slide.map(stage.addChild)
+
+        // Everything after the slide is drawn on the roof's canvas, pinned by
+        // the same corner of the same house. Its last frame is the open house
+        // the rocket leaves from, so it is never swapped for anything — it just
+        // stops animating.
+        let roof = sprite(LaunchArt.roofFrames.first, width: houseWidth / LaunchArt.roofHouseWidth,
+                          anchorX: LaunchArt.roofHouseLeft)
+        roof?.name = "roof"
+        roof?.alpha = 0
+        roof?.isHidden = true
+        roof.map(stage.addChild)
+
+        // Behind the house, which is what makes it come *out* of it: the first
+        // half of the climb is the rocket rising with the house drawn over it,
+        // and that is all the rise sheet's early frames are.
+        let rocket = sprite(LaunchArt.rocket, width: houseWidth * LaunchArt.rocketInHouses,
+                            anchorX: 0)
+        rocket?.name = "rocket"
+        rocket?.zPosition = -1
+        rocket?.position = CGPoint(x: LaunchArt.rocketFrom.x * houseWidth,
+                                   y: LaunchArt.rocketFrom.y * houseWidth)
+        rocket?.isHidden = true
+        rocket.map(stage.addChild)
+
+        // The turn from standing on its tail to flying level is drawn on its own
+        // sheet at its own scale, so it gets its own sprite: animating the
+        // rocket's would keep the rocket's size and squash every pose into it.
+        // `flyInHouses` is picked so the first pose comes out exactly as tall as
+        // the rocket, which is what makes the changeover invisible.
+        let fly = sprite(LaunchArt.flyFrames.first, width: houseWidth * LaunchArt.flyInHouses,
+                         anchorX: 0.5)
+        fly?.name = "fly"
+        fly?.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        fly?.isHidden = true
+        fly.map(stage.addChild)
+    }
+
+    /// The house has arrived. The scene stops being a run and becomes a clip.
+    private func landLaunch() {
+        guard launchIncoming, !isLaunching, !isGameOver else { return }
+        isLaunching = true
+
+        // `launchIncoming` deliberately stays set. The house is still moving —
+        // it has the whole wind-down left to travel — and the clip has to keep
+        // riding the turf through it, because that leftward travel is what
+        // cancels the drawn Benny's rightward walk and holds him still. It
+        // clears when the world does.
+        //
+        // Still at `launchHandoff`, not at `Layout.dogX`: the dash has just put
+        // the real dog there and the clip's first frame draws its own on the
+        // same spot, which is the whole point of the dash.
+        //
+        // Nor is the stage snapped to `launchMark`: it was, back when the house
+        // arrived stationary, and it would now be yanking a moving thing to a
+        // spot it is still a frame away from.
+
+        // A slide the player started can't be left half-played under a clip that
+        // has taken the scene over.
+        if isSliding { endSlide() }
+
+        runLaunch()
+    }
+
+    /// One sprite, sized by width off the texture's own aspect and anchored on
+    /// the house's ground-left corner.
+    private func sprite(_ texture: SKTexture?, width: CGFloat, anchorX: CGFloat) -> SKSpriteNode? {
+        guard let texture, texture.size().width > 0 else { return nil }
+        let node = SKSpriteNode(
+            texture: texture,
+            size: CGSize(width: width, height: width * texture.size().height / texture.size().width)
+        )
+        node.anchorPoint = CGPoint(x: anchorX, y: 0)
+        return node
+    }
+
+    /// The clip: one sequence on the stage, each beat starting the next piece of
+    /// it and then waiting out its length.
+    ///
+    /// On the stage rather than on a sprite because no one sprite is in all of
+    /// it — the slide hands over to the roof and the roof to the rocket — and
+    /// hanging the timeline off whichever happened to be on screen would mean
+    /// stopping it to change what it was.
+    private func runLaunch() {
+        guard let stage = launch,
+              let shut = stage.childNode(withName: "shut") as? SKSpriteNode,
+              let slide = stage.childNode(withName: "slide") as? SKSpriteNode,
+              let roof = stage.childNode(withName: "roof") as? SKSpriteNode,
+              let rocket = stage.childNode(withName: "rocket") as? SKSpriteNode,
+              let fly = stage.childNode(withName: "fly") as? SKSpriteNode,
+              LaunchArt.slideFrames.count > 1, LaunchArt.roofFrames.count > 1,
+              LaunchArt.flyFrames.count > 1
+        else {
+            // No artwork, no clip — `runIntro`'s stance, and for the same
+            // reason. The run still ends properly.
+            finishLaunch()
+            return
+        }
+
+        // The drawn house becomes the drawn house-and-dog, and the real Benny
+        // goes in the same frame. Both sprites carry the same house on the same
+        // canvas at the same place, so the only thing that changes is that
+        // there is now a beagle in the picture — standing exactly where the one
+        // that just vanished was standing.
+        shut.isHidden = true
+        slide.isHidden = false
+        dog.isHidden = true
+        dog.physicsBody?.isDynamic = false
+
+        // Taken once, from the speed the world was doing when the clip began,
+        // so the frames and the wind-down are working off the same number. A
+        // duration each rather than one for all of them — see `slideBeats`.
+        let beats = Launch.slideBeats(at: gameSpeed)
+        let sliding = beats.reduce(0) { $0 + $1.duration }
+        let opening = Double(LaunchArt.roofFrames.count) * Launch.roofFrame
+        let turning = Double(LaunchArt.flyFrames.count) * Launch.turnFrame
+
+        // Stage-relative now, so the apex has to come back into the stage's
+        // frame — it is the one measurement here that belongs to the world.
+        let ascent = SKAction.move(to: CGPoint(
+            x: rocket.position.x,
+            y: Layout.groundTop + Launch.apex(forRocketOfHeight: rocket.size.height)
+                - stage.position.y
+        ), duration: Launch.climb)
+        ascent.timingMode = .easeIn
+
+        // The frame goes up with him, over the same beat and on the same curve,
+        // so the two accelerate together and he simply pulls ahead. By the top
+        // the turf is four hundred units below the bottom edge and there is
+        // nothing in shot but sky — which is the shot the flying phase opens on.
+        let lift = SKAction.moveBy(x: 0, y: Launch.cameraRise, duration: Launch.climb)
+        lift.timingMode = .easeIn
+
+        // And away to the right, level, far enough past the corner to be gone
+        // rather than small. It only drifts up a little: by now it has finished
+        // turning and is flying forward, which is the shot the flying phase
+        // opens on.
+        let exit = SKAction.moveBy(x: Layout.sceneSize.width * 1.2,
+                                   y: Layout.sceneSize.height * 0.12, duration: Launch.away)
+        exit.timingMode = .easeIn
+
+        stage.run(.sequence([
+            .run { slide.run(.sequence(beats)) },
+            .wait(forDuration: sliding + Launch.beforeRoof),
+
+            // Crossed rather than cut, and not for polish. The slide sheet and
+            // the roof sheet draw *different* dog houses — same width, 12.5%
+            // apart in aspect, with the doorway and the name plate redrawn — so
+            // a straight cut between them pops. `Art/CutLaunch.swift` measures
+            // the gap and says so every run. The real fix is one house across
+            // all four sheets, at which point this can go back to a cut.
+            .run {
+                roof.isHidden = false
+                roof.run(.fadeIn(withDuration: Launch.blend))
+                slide.run(.fadeOut(withDuration: Launch.blend))
+                roof.run(.sequence([
+                    .wait(forDuration: Launch.blend),
+                    .animate(with: LaunchArt.roofFrames, timePerFrame: Launch.roofFrame),
+                ]))
+            },
+            .wait(forDuration: Launch.blend + opening + Launch.beforeLaunch),
+
+            .run { [weak self] in
+                rocket.isHidden = false
+                rocket.run(ascent)
+                self?.camera?.run(lift)
+                self?.raiseHighSky()
+            },
+            .wait(forDuration: Launch.climb),
+
+            .run {
+                // Same centre, same height, different drawing — so the swap onto
+                // the flight sheet is a change of pose and not of position.
+                fly.position = CGPoint(x: rocket.position.x + rocket.size.width / 2,
+                                       y: rocket.position.y + rocket.size.height / 2)
+                rocket.isHidden = true
+                fly.isHidden = false
+                fly.run(.sequence([
+                    .animate(with: LaunchArt.flyFrames, timePerFrame: Launch.turnFrame),
+                    exit,
+                ]))
+            },
+            .wait(forDuration: turning + Launch.away),
+
+            .run { [weak self] in self?.beginPhaseTwo() },
+        ]))
+    }
+
+    /// The one way out of the clip, whichever way it ended.
+    private func finishLaunch() {
+        guard isLaunching else { return }
+        isLaunching = false
+
+        launch?.removeFromParent()
+        launch = nil
+
+        // The frame stays where the shot left it, up in the sky. Snapping it
+        // back here cut from open air to the turf a beat before the retry
+        // message landed, which read as the game losing its place — and it
+        // bought nothing, because the only ways on from here are `restart` and
+        // `returnToTitle`, and both rebuild the world from scratch with a fresh
+        // camera at the centre.
+        camera?.removeAllActions()
+
+        removeAction(forKey: "worldScroll")
+        scenery.removeAllActions()
+    }
+
+    /// Brings the high sky up behind the climb.
+    ///
+    /// Built here rather than with the rest of the world because until the
+    /// rocket is lit there is nothing up there to look at, and a second backdrop
+    /// sitting at alpha nought through an entire run is a scrolling action and
+    /// two sprites being paid for every frame of a game that never shows them.
+    private func raiseHighSky() {
+        guard highSky == nil, let camera, let texture = SkyArt.sheet else { return }
+
+        let sky = SKNode()
+        sky.zPosition = -200  // behind the painting it is replacing
+        sky.alpha = 0
+        camera.addChild(sky)
+        highSky = sky
+
+        // Centred on the camera, since that is where its origin now is.
+        let size = CGSize(width: SkyArt.tileWidth, height: SkyArt.height)
+        for index in 0..<SkyArt.stripCount {
+            let strip = SKSpriteNode(texture: texture, size: size)
+            strip.anchorPoint = .zero
+            strip.position = CGPoint(x: CGFloat(index) * size.width - Layout.sceneSize.width / 2,
+                                     y: -size.height / 2)
+            sky.addChild(strip)
+            drift(strip, speed: SkyArt.speed, width: SkyArt.tileWidth)
+        }
+
+        sky.run(.sequence([
+            .wait(forDuration: Launch.skyFadeAfter),
+            .fadeIn(withDuration: Launch.skyFade),
+        ]))
+    }
+
+    /// Where the second phase of the game begins.
+    ///
+    /// The rocket has levelled off and flown out of shot, and the high sky came
+    /// up behind it on the way. What is left to do is take down the world he has
+    /// left — all of it, since none of it can be reached from up here — and fly
+    /// him back in.
+    ///
+    /// The camera goes back to the middle of the scene in the same breath, and
+    /// that move is free: the only thing on screen is the sky, and the sky is
+    /// parented to the camera, so it cannot see the camera move. Everything the
+    /// flying phase builds from here is in ordinary scene coordinates with the
+    /// frame where it has always been — which is what keeps physics possible
+    /// when there is finally something up here to hit.
+    private func beginPhaseTwo() {
+        finishLaunch()
+
+        // The ground, and everything standing on it.
+        scenery.removeFromParent()
+        land?.removeFromParent()
+        ground.removeFromParent()
+        dog.removeFromParent()
+        dogShadow.removeFromParent()
+        enumerateChildNodes(withName: "obstacle") { node, _ in node.removeFromParent() }
+        enumerateChildNodes(withName: "cliff") { node, _ in node.removeFromParent() }
+
+        camera?.position = CGPoint(x: Layout.sceneSize.width / 2,
+                                   y: Layout.sceneSize.height / 2)
+
+        isFlying = true
+        startFlying()
+    }
+
+    /// The flying phase, so far: Benny comes in from the left and flies.
+    ///
+    /// Deliberately only this much. There are no lanes yet and nothing to dodge,
+    /// because the backdrop is what everything else will be judged against and
+    /// it is worth looking at on its own first. The run still ends after a few
+    /// seconds, the way `beginPhaseTwo` has ended it all along, so a launch can
+    /// be played through without leaving the game somewhere it can't get out of.
+    private func startFlying() {
+        guard let pose = LaunchArt.flyFrames.last else { endGame(crashed: false); return }
+
+        let width = Launch.houseWidth * LaunchArt.flyInHouses
+        let flier = SKSpriteNode(
+            texture: pose,
+            size: CGSize(width: width, height: width * pose.size().height / pose.size().width)
+        )
+        flier.name = "flier"
+        flier.zPosition = 10
+
+        // Anchored on the rocket's nose, not the canvas centre — see
+        // `LaunchArt.flyNose`. His position is therefore where the *nose* goes,
+        // so the figures below are worked back from where the centred sprite
+        // used to sit: he ends up in exactly the same place, and every later
+        // texture swap hangs from the same point.
+        flier.anchorPoint = LaunchArt.flyNose
+        let noseX = Layout.dogX + (LaunchArt.flyNose.x - 0.5) * flier.size.width
+        let noseY = Layout.sceneSize.height / 2
+            + (LaunchArt.flyNose.y - 0.5) * flier.size.height
+        flier.position = CGPoint(x: -flier.size.width, y: noseY)
+        addChild(flier)
+
+        let entry = SKAction.moveTo(x: noseX, duration: Flight.entry)
+        entry.timingMode = .easeOut
+
+        // A slow rise and fall on top of it, so he reads as flying rather than
+        // as a sticker on a scrolling picture. It is the only motion he has
+        // until the lanes arrive.
+        let bob = SKAction.sequence([
+            .moveBy(x: 0, y: Flight.bob, duration: Flight.bobTime),
+            .moveBy(x: 0, y: -Flight.bob, duration: Flight.bobTime),
+        ])
+        bob.timingMode = .easeInEaseOut
+
+        let arrive = SKAction.sequence([entry, .repeatForever(bob)])
+
+        // No saucer, no clip — `runIntro`'s stance for missing art, and for the
+        // same reason. Benny still flies in and the phase still starts.
+        guard let ufo = makeUfo(nextTo: flier) else {
+            flier.run(arrive)
+            endFlightAfterLook()
+            return
+        }
+        addChild(ufo)
+
+        let hover = SKAction.sequence([
+            .moveBy(x: 0, y: Rabbit.hover, duration: Rabbit.hoverTime),
+            .moveBy(x: 0, y: -Rabbit.hover, duration: Rabbit.hoverTime),
+        ])
+        hover.timingMode = .easeInEaseOut
+
+        let flyIn = SKAction.moveTo(x: Rabbit.stopX, duration: Rabbit.flyIn)
+        flyIn.timingMode = .easeOut
+
+        let away = SKAction.moveTo(x: Layout.sceneSize.width + ufo.size.width,
+                                   duration: Rabbit.away)
+        away.timingMode = .easeIn
+
+        // Up through the poses and then back and forth across the top two —
+        // see `Rabbit.laughOrder`. He is left on the calm pose for the flight
+        // out, so he leaves composed.
+        let laugh = SKAction.sequence([
+            .animate(with: Rabbit.laughOrder.map { UfoArt.frames[$0] },
+                     timePerFrame: Rabbit.laughFrame),
+            .setTexture(UfoArt.frames[0]),
+        ])
+
+        ufo.run(.sequence([flyIn, .repeatForever(hover)]))
+
+        run(.sequence([
+            .wait(forDuration: Rabbit.flyIn + Rabbit.beforeBenny),
+            .run { flier.run(arrive) },
+
+            .wait(forDuration: Flight.entry + Rabbit.beforeLaugh),
+            .run { ufo.run(laugh) },
+
+            // The hover is a move and so is the exit; both write `position`, so
+            // the hover is stopped rather than left to argue with the flight
+            // out. Stopped here and not before, because it is what keeps the
+            // saucer alive through the laugh.
+            //
+            // Benny starts fuming on the same frame, so the rabbit is bolting
+            // while he is still gritting his teeth rather than after.
+            .wait(forDuration: Rabbit.laughing),
+            .run { [weak self] in
+                ufo.removeAllActions()
+                ufo.run(.sequence([away, .removeFromParent()]))
+                self?.startAnger(flier)
+            },
+
+            .wait(forDuration: Rabbit.angry + Rabbit.hold),
+            .run { [weak self] in
+                self?.settle(flier)
+                self?.endFlightAfterLook()
+            },
+        ]))
+    }
+
+    /// Benny watches the rabbit laugh and loses his temper.
+    ///
+    /// The bob is torn down first and deliberately. It is a `moveBy` repeating
+    /// for ever and the recoil is a `moveBy` too — both write `position`, and
+    /// left running they argue, which is the same trap the saucer's hover hit
+    /// on its way out.
+    ///
+    /// Size and anchor are set along with the texture, never without it. These
+    /// sheets are a different shape from the launch sheet — 1.71 against 0.99 —
+    /// and carry the rocket somewhere else on the canvas, so setting a texture
+    /// on its own would both squash him and jump him a sixth of his height.
+    private func startAnger(_ flier: SKSpriteNode) {
+        guard let first = AngerArt.frames.first else { return }
+        flier.removeAllActions()
+        wear(first, on: flier)
+
+        // Sinks as he winds up, jerks back as the burst goes off — the drift
+        // taken out of the sheet, put back with a shape.
+        let down = SKAction.moveBy(x: 0, y: -Rabbit.recoil, duration: Rabbit.angry * 0.7)
+        down.timingMode = .easeIn
+        let up = SKAction.moveBy(x: 0, y: Rabbit.recoil, duration: Rabbit.angry * 0.3)
+        up.timingMode = .easeOut
+
+        flier.run(.animate(with: AngerArt.frames, timePerFrame: Rabbit.angryFrame))
+        flier.run(.sequence([down, up]))
+    }
+
+    /// And composes himself. This is the face the flying phase is played on.
+    private func settle(_ flier: SKSpriteNode) {
+        guard let serious = AngerArt.serious else { return }
+        flier.removeAllActions()
+        wear(serious, on: flier)
+
+        let bob = SKAction.sequence([
+            .moveBy(x: 0, y: Flight.bob, duration: Flight.bobTime),
+            .moveBy(x: 0, y: -Flight.bob, duration: Flight.bobTime),
+        ])
+        bob.timingMode = .easeInEaseOut
+        flier.run(.repeatForever(bob))
+    }
+
+    /// Puts one of `AngerArt`'s poses on the flier without moving or resizing
+    /// the rocket inside it.
+    ///
+    /// The one place the three sheets are reconciled: they are the same drawing
+    /// at different resolutions and croppings, so the sprite is sized by
+    /// `widthInFlyFrames` and hung from `AngerArt.nose`, both measured off the
+    /// rocket's nose cone. Change one without the other and he changes size or
+    /// jumps.
+    private func wear(_ texture: SKTexture, on flier: SKSpriteNode) {
+        let width = Launch.houseWidth * LaunchArt.flyInHouses * AngerArt.widthInFlyFrames
+        flier.anchorPoint = AngerArt.nose
+        flier.size = CGSize(width: width, height: width / AngerArt.aspect)
+        flier.texture = texture
+    }
+
+    /// The saucer, sized against Benny and parked off the left-hand edge.
+    ///
+    /// `nil` when the sheet isn't there — `numberedTextures` comes back empty
+    /// rather than handing out a placeholder, which is the point of it.
+    private func makeUfo(nextTo flier: SKSpriteNode) -> SKSpriteNode? {
+        guard let first = UfoArt.frames.first, UfoArt.frames.count > 1 else { return nil }
+
+        let width = flier.size.width * Rabbit.widthInFliers
+        let ufo = SKSpriteNode(
+            texture: first,
+            size: CGSize(width: width, height: width / UfoArt.aspect)
+        )
+        ufo.name = "ufo"
+        ufo.zPosition = 11  // over Benny, who passes below him
+        ufo.position = CGPoint(x: -width, y: Rabbit.height)
+        return ufo
+    }
+
+    /// Lets the phase run for a while and then ends it, until there is
+    /// something up here to play against.
+    private func endFlightAfterLook() {
+        run(.sequence([
+            .wait(forDuration: Flight.look),
+            .run { [weak self] in self?.endGame(crashed: false, finale: true) },
+        ]))
     }
 
     // MARK: - Contacts
@@ -3148,11 +4512,26 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// by a label. Three or four frames of nothing is all it takes.
     private static let crashHold: TimeInterval = 0.09
 
-    private func endGame() {
+    /// Ends the run.
+    ///
+    /// `crashed` is what separates hitting something from simply arriving at the
+    /// end of what is built. The flying phase runs out rather than killing him,
+    /// and giving that the full treatment — the crash sound, the haptic, the
+    /// squash and the white flash — reads as a fault in a shot where nothing
+    /// went wrong.
+    ///
+    /// `finale` is the other half of that: reaching the end of the story is not
+    /// losing, and "Good boy! Tap to retry" is the wrong thing to say about it.
+    /// Both default to the crash, so the twenty-odd other ways a run can end are
+    /// untouched.
+    private func endGame(crashed: Bool = true, finale: Bool = false) {
         guard !isGameOver else { return }
         isGameOver = true
         physicsWorld.speed = 0
         scenery.isPaused = true
+        // He is still flying when the phase runs out, and a frozen scene with
+        // one thing in it still moving reads as the game having lost track.
+        childNode(withName: "flier")?.isPaused = true
         // Otherwise he keeps galloping on the spot in the frozen scene.
         dog.childNode(withName: "body")?.isPaused = true
         // Paused as well as stopped: removing the actions holds the obstacle
@@ -3164,30 +4543,84 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             node.isPaused = true
         }
 
-        Sfx.shared.play(.crash)
-        Haptics.crash()
-        // Harder than a landing, and the last thing he does. Actions still run
-        // in a scene whose *physics* is stopped, which is what lets the impact
-        // play out over a world that has already frozen.
-        squash(xScale: 1.35, yScale: 0.68)
-        flash()
+        if crashed {
+            Sfx.shared.play(.crash)
+            Haptics.crash()
+            // Harder than a landing, and the last thing he does. Actions still
+            // run in a scene whose *physics* is stopped, which is what lets the
+            // impact play out over a world that has already frozen.
+            squash(xScale: 1.35, yScale: 0.68)
+            flash()
+        }
 
-        messageLabel = SKLabelNode(fontNamed: "AvenirNextCondensed-Heavy")
-        messageLabel.text = "Good boy! Tap to retry"
-        messageLabel.fontSize = 30
-        messageLabel.fontColor = Palette.ink
-        messageLabel.horizontalAlignmentMode = .center
-        // Centred vertically, the one part of the scene `.aspectFill` never crops.
-        messageLabel.position = CGPoint(x: Layout.sceneSize.width / 2, y: Layout.sceneSize.height / 2)
-        messageLabel.zPosition = 50
-        messageLabel.setScale(0)
-        addChild(messageLabel)
-        messageLabel.run(.sequence([
-            .wait(forDuration: Self.crashHold),
-            .scale(to: 1, duration: 0.25),
-        ]))
+        if finale {
+            showFinale()
+        } else {
+            messageLabel = SKLabelNode(fontNamed: "AvenirNextCondensed-Heavy")
+            messageLabel.text = "Good boy! Tap to retry"
+            messageLabel.fontSize = 30
+            messageLabel.fontColor = Palette.ink
+            messageLabel.horizontalAlignmentMode = .center
+            // Centred vertically, the one part of the scene `.aspectFill` never
+            // crops. On the camera, at its origin, which is the middle of the
+            // frame wherever the frame happens to be. A crash can't move it, but
+            // a launch can: end a run up in the sky and a scene-positioned label
+            // would be 550 units below the bottom of the screen.
+            messageLabel.position = .zero
+            messageLabel.zPosition = 50
+            messageLabel.setScale(0)
+            (camera ?? self).addChild(messageLabel)
+            messageLabel.run(.sequence([
+                .wait(forDuration: Self.crashHold),
+                .scale(to: 1, duration: 0.25),
+            ]))
+        }
 
+        // On both paths. Reaching the end of the story means a score of at least
+        // `Launch.atScore`, so leaving it out here would make the best run
+        // anybody can have the one that never reaches the leaderboard.
         onGameOver?(score)
+    }
+
+    /// The card the game ends on — see `Finale`.
+    ///
+    /// One label per line, stacked and then shifted so the block as a whole sits
+    /// on the camera's centre rather than hanging from its first line. Hung on
+    /// the camera for the same reason the retry message is: the run ends a
+    /// thousand points up in the sky, and anything positioned in the scene would
+    /// be left behind on the ground.
+    private func showFinale() {
+        // Walk down the lines to find each centre, then recentre the block.
+        var centres: [CGFloat] = []
+        var cursor: CGFloat = 0
+        for line in Finale.lines {
+            cursor -= line.drop
+            centres.append(cursor)
+        }
+        let shift = -((centres.first ?? 0) + (centres.last ?? 0)) / 2
+
+        for (line, centre) in zip(Finale.lines, centres) {
+            let isHeadline = line.size == Finale.lines.first?.size
+            let label = SKLabelNode(
+                fontNamed: isHeadline ? "AvenirNextCondensed-Heavy"
+                                      : "AvenirNextCondensed-Medium")
+            label.text = line.text
+            label.fontSize = line.size
+            label.fontColor = Palette.ink
+            label.horizontalAlignmentMode = .center
+            label.verticalAlignmentMode = .center
+            label.position = CGPoint(x: 0, y: centre + shift)
+            label.zPosition = 50
+            label.setScale(0)
+            (camera ?? self).addChild(label)
+            label.run(.sequence([
+                .wait(forDuration: Self.crashHold),
+                .scale(to: 1, duration: 0.25),
+            ]))
+            // Kept so the scene holds a reference to one of them, the way it
+            // does for the retry message.
+            if isHeadline { messageLabel = label }
+        }
     }
 
     /// A frame or two of white over the whole scene.
@@ -3200,10 +4633,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// there is anything to read.
     private func flash() {
         let sheet = SKSpriteNode(color: .white, size: Layout.sceneSize)
-        sheet.position = CGPoint(x: Layout.sceneSize.width / 2, y: Layout.sceneSize.height / 2)
+        sheet.position = .zero   // the camera's centre — see `messageLabel`
         sheet.zPosition = 45
         sheet.alpha = 0
-        addChild(sheet)
+        (camera ?? self).addChild(sheet)
         sheet.run(.sequence([
             .fadeAlpha(to: 0.3, duration: 0.03),
             .fadeOut(withDuration: 0.12),
@@ -3248,6 +4681,18 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         obstacleTimer = 0
         obstacleInterval = 1.8
         benchesSpawned = 0
+        isLaunching = false
+        launchIncoming = false
+        launchPending = false
+        launchDashed = false
+        launchBraking = false
+        hasLaunched = false
+        launch = nil
+        isFlying = false
+        // `removeAllChildren` has already taken these; this is so the scene
+        // isn't left holding references to them until `build` makes new ones.
+        highSky = nil
+        camera = nil
         gameSpeed = Layout.openingSpeed
         lastUpdateTime = 0
         physicsWorld.speed = 1

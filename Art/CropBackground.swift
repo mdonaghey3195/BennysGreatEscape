@@ -39,7 +39,7 @@ private let shortestPeriod = 1200
 /// Rows worth comparing. The flat sky above and the flat field below match
 /// everywhere and would drown the signal — what carries it is the clouds, the
 /// hills, the bush line, the grass and the earth.
-private let interesting: [(Int, Int)] = [(200, 900), (1040, 1470)]
+private let interesting: [(Int, Int)] = [(2280, 2980)]
 
 /// How wide a stretch either side of a join is judged on. A single column can
 /// match by luck; twenty-five of them in a row cannot.
@@ -75,12 +75,25 @@ private let wrapFloor = 5.0
 /// How far a sky pixel can sit from its row's true colour and still be a
 /// blemish rather than a cloud, and how far it has to sit to be cloud.
 ///
-/// Measured off the painting, and the two are not close: 93% of sky pixels are
-/// within 14 of their row, every cloud pixel is 60 or more away, and the band
-/// between them holds almost nothing. A ramp across that empty gap takes the
+/// These were 15 and 55, measured off the first painting, where the two were
+/// nowhere near each other: 93% of sky pixels sat within 14 of their row, every
+/// cloud pixel was 60 or more away, and the band between held almost nothing.
+///
+/// That gap is a property of the artwork, not of the sky, and the third painting
+/// closed it. Its clouds are wisps rather than cumulus and they top out at **54**
+/// — under the old ceiling of 55, so not one pixel of weather in the entire
+/// picture counted as cloud, and the repair quietly flattened 89% of it into
+/// plain blue. The backdrop installed as an almost empty sky and the numbers all
+/// said it had gone well.
+///
+/// So they are set against what blemishes actually are rather than against where
+/// one painting's clouds happened to start. The ghosts this exists to remove are
+/// documented below at six values or less; eight clears them with room, and
+/// eighteen leaves seven-tenths of this painting's cloud mass untouched instead
+/// of none of it. A ramp across that gap takes the
 /// blemishes out without touching a cloud or hardening its soft edge.
-private let skyBlemish = 15
-private let skyCloud = 55
+private let skyBlemish = 8
+private let skyCloud = 18
 
 /// How many rows either side the gradient is averaged over. The row-by-row
 /// reading of it carries the painting's own faint horizontal banding, and
@@ -304,6 +317,110 @@ private func ramp(_ value: Int, from low: Int, to high: Int) -> Double {
 ///
 /// It only ever looks *up*: each column is repaired above its own horizon, so
 /// nothing here can reach the hills.
+/// Rubs out any cloud that sits across the painting's side edge.
+///
+/// The tall painting is a single tile and very nearly wraps already: measured
+/// per two-hundred-row band, its left and right edges agree *exactly*
+/// everywhere — all the sky, all the hills, all the ground — except a few bands
+/// in the middle, where clouds straddle the join. Laid end to end those draw
+/// half a cloud against half of a different one, twice a lap, and `verifyWrap`
+/// refuses the crop over it.
+///
+/// The sky behind them is a flat vertical gradient, which is what makes this
+/// easy: a cloud can simply be taken out and the gradient put back, leaving a
+/// sky with fewer clouds in it and no seam at all. Flood rather than a column
+/// walk, because a cloud is a blob — walking in row by row would clear the rows
+/// that reach the edge and leave crescents of the ones that don't.
+///
+/// What goes is reported by row, and that matters more than it looks. This is
+/// the one step that silently takes painted work out of the picture, and a
+/// backdrop is repainted by moving things around in the sky — so the cloud an
+/// artist nudged towards the edge is exactly the cloud this deletes, and
+/// without the rows printed there is nothing to connect the two. The second
+/// painting through here lost four, three of them in the stretch the rocket
+/// climbs past, and the fix is to move them off the edge in the source rather
+/// than anything in this file.
+///
+/// The alternative is `MakeTileable`'s mirror, which wraps a whole band by
+/// making it a palindrome. That is the right answer for a painting that doesn't
+/// repeat at all; here it would double the tile and recompose a picture that is
+/// otherwise exactly right, to fix two clouds.
+private func clearEdgeClouds(_ sheet: inout Bitmap) -> (clouds: [(rows: ClosedRange<Int>, side: String, pixels: Int)], pixels: Int) {
+    // Each row's own sky, by median — clouds are never most of a row.
+    var sky: [[Int]] = []
+    for y in 0..<sheet.height {
+        var channels: [[Int]] = [[], [], []]
+        for x in stride(from: 0, to: sheet.width, by: 3) {
+            let o = sheet.offset(x, y)
+            for c in 0..<3 { channels[c].append(Int(sheet.pixels[o + c])) }
+        }
+        sky.append(channels.map { $0.sorted()[$0.count / 2] })
+    }
+
+    // Where the sky stops, column by column — `flattenSky`'s test, and for the
+    // same reason: cloud is still sky for this purpose, what ends it is the blue
+    // going out of the picture. The flood has to stay above this. Let it into
+    // the hills and it will happily follow the grass right across the painting,
+    // since down there "far from the row's median" describes most of the
+    // picture rather than a cloud.
+    var horizon = [Int](repeating: 0, count: sheet.width)
+    for x in 0..<sheet.width {
+        var y = 0
+        while y < sheet.height, sheet.pixels[sheet.offset(x, y) + 2] >= 200 { y += 1 }
+        horizon[x] = y
+    }
+
+    // At `skyCloud`, not `skyBlemish` — the flood takes the whole blob it lands
+    // on, so this decides how far inland a wisp is chased. Judged at the lower
+    // threshold on soft art it runs neighbouring wisps together and swallows
+    // most of the weather near the edge; `CropSky` measured that at better than
+    // twice the painted work destroyed, for no more cloud left standing.
+    func isCloud(_ x: Int, _ y: Int) -> Bool {
+        guard y < horizon[x] else { return false }
+        let o = sheet.offset(x, y)
+        var worst = 0
+        for c in 0..<3 { worst = max(worst, abs(Int(sheet.pixels[o + c]) - sky[y][c])) }
+        return worst > skyCloud
+    }
+
+    var seen = [Bool](repeating: false, count: sheet.width * sheet.height)
+    var blobs: [(rows: ClosedRange<Int>, side: String, pixels: Int)] = []
+    var cleared = 0
+    for y in 0..<sheet.height {
+        for x in [0, sheet.width - 1] {
+            let seed = y * sheet.width + x
+            guard !seen[seed], isCloud(x, y) else { continue }
+            var top = y, bottom = y, size = 0
+            var touchesLeft = false, touchesRight = false
+            var stack = [seed]
+            seen[seed] = true
+            while let pixel = stack.popLast() {
+                let px = pixel % sheet.width, py = pixel / sheet.width
+                let o = sheet.offset(px, py)
+                for c in 0..<3 { sheet.pixels[o + c] = UInt8(sky[py][c]) }
+                cleared += 1
+                size += 1
+                top = min(top, py)
+                bottom = max(bottom, py)
+                if px == 0 { touchesLeft = true }
+                if px == sheet.width - 1 { touchesRight = true }
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let nx = px + dx, ny = py + dy
+                    guard nx >= 0, nx < sheet.width, ny >= 0, ny < sheet.height else { continue }
+                    let next = ny * sheet.width + nx
+                    guard !seen[next], isCloud(nx, ny) else { continue }
+                    seen[next] = true
+                    stack.append(next)
+                }
+            }
+            let side = touchesLeft && touchesRight ? "both edges"
+                     : touchesLeft ? "left edge" : "right edge"
+            blobs.append((top...bottom, side, size))
+        }
+    }
+    return (blobs, cleared)
+}
+
 private func flattenSky(_ crop: inout Bitmap) -> (repaired: Int, worst: Int) {
     // Where the sky stops, column by column. Cloud is still sky for this
     // purpose — what ends it is the blue going out of the picture.
@@ -421,6 +538,76 @@ private func earthLine(in crop: Bitmap, below grass: Int) -> Int {
 /// at the speed of the grass. There are flat rows in the gaps *between* clouds
 /// and they are a trap — this searches upward from the hills and stops at the
 /// first row flat enough to cut, which is the one just above the highest hill.
+/// The highest row of the crop carrying any cloud — where the sky runs out of
+/// weather.
+///
+/// Measured here rather than by hand because `Launch.apex` hangs off it: the
+/// rocket climbs until the frame's bottom edge has cleared this row and then
+/// turns, so this number decides how high the shot goes. Typed into
+/// `BackdropArt` from a one-off measurement it is exactly the kind of constant
+/// that rots — the third painting through this pipeline moved it ninety rows
+/// and nothing would have said so.
+///
+/// Run *after* `clearEdgeClouds`, and that is not incidental: the clouds it rubs
+/// out can be the highest ones in the picture, and in that same painting one of
+/// them was. Measured before the sweep this reads a ceiling that is about to be
+/// deleted, and the rocket climbs to meet a cloud that is no longer there.
+///
+/// A row counts as weather when there is enough cloud in it to *see*, not when
+/// a cloud can be detected in it, and that distinction is the whole of this.
+///
+/// Asking for a few pixels is a detection test, and on soft art it answers with
+/// a trace nobody could point to: on the wispy painting it put the ceiling 246
+/// rows — a hundred and fifty units of climb — above the first cloud actually
+/// visible in the picture. Asking for a fiftieth of the width is a visibility
+/// test. That is about twenty-two scene units of cloud in the row, which is a
+/// streak you can see.
+///
+/// It also agrees with the hand measurement it replaces: run against the
+/// painting those constants were typed from, it answers 1212 where the eye said
+/// 1210. On solid cumulus the two tests are the same test, because a row either
+/// has a cloud across it or it has none — it is only soft art that separates
+/// them.
+private let cloudVisible = 0.02
+
+/// The highest row of the crop carrying visible cloud.
+///
+/// Judged at `skyCloud` rather than `skyBlemish`: this decides where a shot
+/// ends, so it should answer to weather and not to the faintest thing the sky
+/// repair can still find. Above each column's horizon, so the hills can never
+/// answer.
+private func cloudLine(in crop: Bitmap) -> Int {
+    var sky: [[Int]] = []
+    for y in 0..<crop.height {
+        var channels: [[Int]] = [[], [], []]
+        for x in stride(from: 0, to: crop.width, by: 3) {
+            let o = crop.offset(x, y)
+            for c in 0..<3 { channels[c].append(Int(crop.pixels[o + c])) }
+        }
+        sky.append(channels.map { $0.sorted()[$0.count / 2] })
+    }
+
+    var horizon = [Int](repeating: 0, count: crop.width)
+    for x in 0..<crop.width {
+        var y = 0
+        while y < crop.height, crop.pixels[crop.offset(x, y) + 2] >= 200 { y += 1 }
+        horizon[x] = y
+    }
+
+    let sampled = crop.width / 2
+    for y in 0..<crop.height {
+        var run = 0
+        for x in stride(from: 0, to: crop.width, by: 2) where y < horizon[x] {
+            let o = crop.offset(x, y)
+            var worst = 0
+            for c in 0..<3 { worst = max(worst, abs(Int(crop.pixels[o + c]) - sky[y][c])) }
+            if worst > skyCloud { run += 1 }
+        }
+        if Double(run) / Double(sampled) > cloudVisible { return y }
+    }
+    return 0
+}
+
 private func skyLine(in crop: Bitmap, above grass: Int) -> (row: Int, deviation: Int) {
     /// Out of 255. Below this a join cannot be seen; the sky is a gradient, so
     /// insisting on nothing at all would walk the split up into the clouds.
@@ -476,8 +663,18 @@ private func ratio(_ value: Int, of total: Int) -> String {
 
 print("background")
 
-private let source = load("Art/background_source.png")
+private var source = load("Art/bg_scroll_tall_source.png")
 print("  source \(source.width)x\(source.height)")
+
+// Before anything is measured off it: the clouds sitting across the join.
+private let swept = clearEdgeClouds(&source)
+print("  edge clouds: \(swept.clouds.count) rubbed out,"
+    + " \(swept.pixels) pixels put back to sky")
+for cloud in swept.clouds.sorted(by: { $0.pixels > $1.pixels }) {
+    print("    rows \(cloud.rows.lowerBound)-\(cloud.rows.upperBound)"
+        + " on the \(cloud.side), \(cloud.pixels) pixels"
+        + " — move it clear of the edge in the source to keep it")
+}
 
 private let rows = interesting
     .flatMap { stride(from: $0.0, through: min($0.1, source.height - 1), by: 6) }
@@ -501,6 +698,7 @@ for y in 0..<source.height {
 private let grass = grassLine(in: crop)
 private let earth = earthLine(in: crop, below: grass)
 private let sky = skyLine(in: crop, above: grass)
+private let clouds = cloudLine(in: crop)
 
 // Measured first, off the untouched painting, and only then repaired — so what
 // the scene is staged by never depends on the repair having run.
@@ -516,6 +714,7 @@ install(crop, named: "bg_scroll")
 print("  bg_scroll \(crop.width)x\(crop.height)")
 print("  grass line row \(grass), earth line row \(earth) — \(earth - grass) rows of field to stand in")
 print("  sky split row \(sky.row) (varies by \(sky.deviation)/255 across it)")
+print("  cloud ceiling row \(clouds) — \(clouds) rows of clear sky above the weather")
 
 print("""
 
@@ -524,5 +723,6 @@ paste into BackdropArt:
     static let grassLineFraction: CGFloat = \(ratio(grass, of: crop.height))
     static let earthLineFraction: CGFloat = \(ratio(earth, of: crop.height))
     static let skySplitFraction: CGFloat = \(ratio(sky.row, of: crop.height))
+    static let cloudCeilingFraction: CGFloat = \(ratio(clouds, of: crop.height))
     static let aspect: CGFloat = \(ratio(crop.width, of: crop.height))
 """)
