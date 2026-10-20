@@ -273,20 +273,51 @@ private enum DogArt {
     }
 
     /// The physics body covers the part of the drawing that is Benny in *every*
-    /// frame — the torso and head — found by intersecting all six silhouettes.
-    /// The legs sweep through a much larger envelope during a gallop and the
-    /// tail sweeps behind; catching an obstacle with a trailing paw or the tail
-    /// shouldn't end a run, while hitting one body-on still does.
+    /// frame — the torso and head — found by intersecting the six **run**
+    /// silhouettes. The legs sweep through a much larger envelope during a
+    /// gallop and the tail sweeps behind; catching an obstacle with a trailing
+    /// paw or the tail shouldn't end a run, while hitting one body-on still
+    /// does.
     ///
     /// The offset is large because the canvas is sized to the fully extended
     /// poses, whose rear legs reach a long way back, leaving the body sitting
     /// well right of centre.
     ///
-    /// Re-derive these by running the frame-splitting script over a new sheet;
-    /// it prints them.
+    /// **The run frames are not the whole story, and that is the limitation to
+    /// understand before touching these.** There are six jump frames on the same
+    /// canvas, and they throw the body diagonally: in the rising pose the box's
+    /// leading edge sits hard against his front paw at the top and overhangs
+    /// nothing but air at the bottom — 14 units of it three-quarters of the way
+    /// down, 45 units at nine-tenths. Only 18% of this box is dog in all twelve
+    /// poses.
+    ///
+    /// A better static shape can't fix that. Measured across all twelve poses
+    /// together, the leading edge is already tight — within 0.3 units of what
+    /// *some* pose reaches at almost every height. The box is not too big; one
+    /// box cannot fit twelve silhouettes. The accurate fix is a body per pose,
+    /// swapped with the animation, and that means replacing the physics body six
+    /// times mid-flight with the velocity carried across each time.
     static let bodyWidthFraction: CGFloat = 0.729
     static let bodyHeightFraction: CGFloat = 0.599
     static let bodyOffsetXFraction: CGFloat = 0.091
+
+    /// How far the leading edge is pulled back, as a fraction of the canvas.
+    ///
+    /// Forgiveness, and named as such rather than folded into the fractions
+    /// above, because it is not a measurement of the drawing — it is a decision
+    /// about how close a near miss may be before it counts. The fractions stay
+    /// honest about what they measure and this says what was traded.
+    ///
+    /// It exists because of a run that ended at 87 with the stump plainly
+    /// uncleared only by the box: his front paws were above its top and his
+    /// hind legs behind it, the drawings never touched, and the lower leading
+    /// corner of the box — empty in that pose — caught it.
+    ///
+    /// The cost is the other direction: a nose-first hit now needs this much
+    /// more overlap before it registers. Eight units against a stump some ninety
+    /// wide, which is the smallest amount that clears the case above with
+    /// margin.
+    static let forgivenessFraction: CGFloat = 0.08
 
     /// Where Benny's paws are when he's *running*, as a fraction up from the
     /// bottom of the canvas — the sprite's anchor, and what sits on the turf.
@@ -2444,14 +2475,22 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// rather than at each call site.
     private func makeDogPhysics(ducked: Bool) -> SKPhysicsBody {
         let size = Layout.dogSize
+        // Pulled off the leading edge only — see `DogArt.forgivenessFraction`.
+        // Half off the width and half off the centre, which moves the right edge
+        // in and leaves the left where it is: the trailing edge is already
+        // behind his tail and giving away ground there would buy nothing.
+        let give = DogArt.forgivenessFraction
         let box = CGSize(
-            width: size.width * (ducked ? DogArt.slideWidthFraction : DogArt.bodyWidthFraction),
+            width: size.width
+                * ((ducked ? DogArt.slideWidthFraction : DogArt.bodyWidthFraction) - give),
             height: size.height * (ducked ? DogArt.slideHeightFraction : DogArt.bodyHeightFraction)
         )
         let body = SKPhysicsBody(
             rectangleOf: box,
             center: CGPoint(
-                x: size.width * (ducked ? DogArt.slideOffsetXFraction : DogArt.bodyOffsetXFraction),
+                x: size.width
+                    * ((ducked ? DogArt.slideOffsetXFraction : DogArt.bodyOffsetXFraction)
+                       - give / 2),
                 y: (box.height - size.height) / 2
             )
         )
@@ -2551,6 +2590,16 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             finishIntro()
             return
         }
+        // Before anything that swallows a touch. Once the run is over the only
+        // thing a tap can mean is "again", whichever phase it ended in — and
+        // the two guards below used to sit above this one, which made the end
+        // card a dead end: `isFlying` stays true until `restart` clears it, and
+        // `restart` is only reachable from here. Every tap on "Tap to play
+        // again" was being swallowed on its way to the branch that answers it.
+        guard !isGameOver else {
+            restart()
+            return
+        }
         // The launch is the other way about: it is what a hundred obstacles were
         // for, it happens once, and a stray tap is not a request to miss it. So
         // this swallows the touch rather than acting on it.
@@ -2559,10 +2608,6 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // steer has been taken out of the scene by `beginPhaseTwo`, so without
         // this a swipe goes looking for a jump on a detached physics body.
         guard !isFlying else { return }
-        guard !isGameOver else {
-            restart()
-            return
-        }
         guard let touch = touches.first else { return }
         touchOrigin = touch.location(in: self)
         gestureResolved = false
