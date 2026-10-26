@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Nothing here is tracked and nothing is collected. The app has no
+	     analytics, no network of its own and no third-party SDKs; the only
+	     thing that ever leaves the device is a score, and Game Center carries
+	     that under Apple's own policy rather than ours. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<!-- One "required reason" API: `@AppStorage`, which is `UserDefaults`.
+	     Four keys use it — bestScore, musicOn, seenJumpHint and seenSlideHint —
+	     and every one of them is this app's own setting, written and read by
+	     this app alone. That is what CA92.1 describes. -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

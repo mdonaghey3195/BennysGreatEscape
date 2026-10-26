@@ -684,8 +684,29 @@ private let props = [
     Prop(source: "bush", asset: "obstacle_bush", name: "bush"),
     Prop(source: "hedge", asset: "obstacle_hedge", name: "hedge"),
     Prop(source: "log", asset: "obstacle_log", name: "log"),
-    Prop(source: "log_stack", asset: "obstacle_log_stack", name: "logStack"),
     Prop(source: "stump", asset: "obstacle_stump", name: "stump"),
+
+    // `log_stack` is deliberately not here, and that is the only exception in
+    // this file.
+    //
+    // `obstacle_log_stack` was finished by hand after it was cut, and this
+    // script cannot reproduce the result. Its source carries a soft drop shadow
+    // under the left-hand log, grey against a near-white ground; `key` keeps it,
+    // and it installed as a pale smudge that showed against the grass. Tightening
+    // the key enough to take a soft shadow out starts taking the logs' own dark
+    // bark edges with it — the shadow and the bark are the same kind of dark
+    // against the same background, which is exactly the case keying cannot
+    // separate.
+    //
+    // So the installed asset is the source of truth for that one prop. Listing
+    // it here would mean any casual rerun of this script silently undid the fix,
+    // and reruns are casual — a comment asking people not to would not survive
+    // the first person in a hurry.
+    //
+    // If `Art/log_stack_source.png` is ever redrawn without the shadow, put the
+    // line back:
+    //     Prop(source: "log_stack", asset: "obstacle_log_stack", name: "logStack"),
+    // and delete this note.
 ]
 
 private func round3(_ v: Double) -> String { String(format: "%.3f", v) }
