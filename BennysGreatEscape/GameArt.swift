@@ -44,13 +44,21 @@ extension GameScene {
 
     /// Benny, drawn side-on and facing right — the way he runs.
     enum DogArt {
-        /// The run cycle: add `benny_run_6` and it joins the gallop on its own.
+        /// The run cycle, ten frames: add `benny_run_10` and it joins the gallop on
+        /// its own. `gallop`'s `timePerFrame` is set against the count, though, so a
+        /// frame added or removed changes the tempo until that is retuned.
         static let frames: [SKTexture] = numberedTextures("benny_run")
 
-        /// The jump arc — bound, rear up, two airborne poses, reach down, land.
+        /// The jump arc, ten frames — crouch, launch, two rising, two at the apex,
+        /// descend, reach down, land, settle. `jumpArc` weights these individually,
+        /// so its weights are tied to this count.
         static let jumpFrames: [SKTexture] = numberedTextures("benny_jump")
 
-        /// The slide — drop, slide, deep slide, recover.
+        /// The slide, eight frames: upright through flat, all of it going down.
+        ///
+        /// There is no recovery pose on the sheet, so `startSlide` plays the entry
+        /// frames backwards to stand him up. Which costs no art and reads correctly
+        /// — getting up really is lying down in reverse.
         static let slideFrames: [SKTexture] = numberedTextures("benny_slide")
 
         /// Width / height of the drawing. The fallback only matters if the asset is
@@ -61,8 +69,9 @@ extension GameScene {
         }
 
         /// The physics body covers the part of the drawing that is Benny in *every*
-        /// frame — the torso and head — found by intersecting the six **run**
-        /// silhouettes. The legs sweep through a much larger envelope during a
+        /// frame — the torso and head — found by intersecting the ten **run**
+        /// silhouettes. `Art/CutDogFrames.swift` measures and prints these; they are
+        /// not numbers to tune by eye. The legs sweep through a much larger envelope during a
         /// gallop and the tail sweeps behind; catching an obstacle with a trailing
         /// paw or the tail shouldn't end a run, while hitting one body-on still
         /// does.
@@ -72,22 +81,23 @@ extension GameScene {
         /// well right of centre.
         ///
         /// **The run frames are not the whole story, and that is the limitation to
-        /// understand before touching these.** There are six jump frames on the same
-        /// canvas, and they throw the body diagonally: in the rising pose the box's
-        /// leading edge sits hard against his front paw at the top and overhangs
-        /// nothing but air at the bottom — 14 units of it three-quarters of the way
-        /// down, 45 units at nine-tenths. Only 18% of this box is dog in all twelve
-        /// poses.
+        /// understand before touching these.** There are ten jump frames on the same
+        /// canvas, and they throw the body diagonally, so one static box fits none of
+        /// them well: 28% of this box is dog in all ten running poses and only 14%
+        /// across all twenty.
         ///
-        /// A better static shape can't fix that. Measured across all twelve poses
-        /// together, the leading edge is already tight — within 0.3 units of what
-        /// *some* pose reaches at almost every height. The box is not too big; one
-        /// box cannot fit twelve silhouettes. The accurate fix is a body per pose,
-        /// swapped with the animation, and that means replacing the physics body six
-        /// times mid-flight with the velocity carried across each time.
-        static let bodyWidthFraction: CGFloat = 0.729
-        static let bodyHeightFraction: CGFloat = 0.599
-        static let bodyOffsetXFraction: CGFloat = 0.091
+        /// A better static shape can't fix that. The leading edge already sits 5pt
+        /// behind the furthest any of the twenty poses reaches, and pulling it in
+        /// further starts missing hits rather than excusing them. The box is not too
+        /// big; one box cannot fit twenty silhouettes. The accurate fix is a body per
+        /// pose, swapped with the animation, carrying the velocity across each time.
+        ///
+        /// The extra frames did not make this worse where it is felt. Against the six
+        /// that shipped before, all of the width the intersection gained is on the
+        /// *trailing* edge, behind his tail — the leading edge came in by 1.2pt.
+        static let bodyWidthFraction: CGFloat = 0.786
+        static let bodyHeightFraction: CGFloat = 0.797
+        static let bodyOffsetXFraction: CGFloat = 0.054
 
         /// How far the leading edge is pulled back, as a fraction of the canvas.
         ///
@@ -110,24 +120,31 @@ extension GameScene {
         /// Where Benny's paws are when he's *running*, as a fraction up from the
         /// bottom of the canvas — the sprite's anchor, and what sits on the turf.
         ///
-        /// Not the bottom of the canvas, because run and jump share one canvas and
-        /// the rear-up pose's hind legs dangle well below the running paw line.
-        /// Anchoring at the canvas floor would leave him hovering as he ran; this
-        /// way that dangle simply hangs below the anchor, which is exactly where it
-        /// belongs once the physics has lifted him.
-        static let groundLineFraction: CGFloat = 0.263
+        /// Very nearly the bottom of the canvas, now, and that is measured rather
+        /// than assumed: across all twenty-eight frames nothing is drawn below the
+        /// deepest paw line but a single row, so there is no dangle for the anchor to
+        /// leave room for. It was 0.263 when the sheets were cropped loosely and a
+        /// rear-up pose hung well below the running paw line.
+        ///
+        /// It stays a fraction rather than a zero because the next redraw may dangle
+        /// again, and because this is what the cutter measures.
+        static let groundLineFraction: CGFloat = 0.001
 
         /// The ducked box, measured off the slide poses the same way. Notably the
         /// slide frames are aligned on the *ground* rather than the collar — a
         /// sliding dog's head drops, and pinning his collar to the running collar
         /// would cancel exactly the crouch that makes ducking work.
         ///
-        /// 33pt tall against 55pt running, so a rail at `Layout.duckClearance` is
-        /// hit standing and cleared sliding. Slightly narrower than the drawing, so
-        /// a trailing paw brushing an obstacle doesn't end the run.
-        static let slideWidthFraction: CGFloat = 0.80
-        static let slideHeightFraction: CGFloat = 0.362
-        static let slideOffsetXFraction: CGFloat = 0.030
+        /// 35pt tall against 71pt running, so a rail at `Layout.duckClearance`'s 52
+        /// is hit standing and cleared sliding — more margin either way than the
+        /// 41-against-68 these replace.
+        ///
+        /// 96pt against the drawing's 122, because the intersection drops the front
+        /// paws he stretches out ahead of himself on the way down: a paw brushing an
+        /// obstacle doesn't end the run.
+        static let slideWidthFraction: CGFloat = 0.770
+        static let slideHeightFraction: CGFloat = 0.391
+        static let slideOffsetXFraction: CGFloat = -0.028
     }
 
 

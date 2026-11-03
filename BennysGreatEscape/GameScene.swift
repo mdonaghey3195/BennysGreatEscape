@@ -432,22 +432,44 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// a paw travels relative to the body against how fast the ground moves — get
     /// this wrong and planted feet slide, which is what makes a run cycle read as
     /// a moonwalk. `update` then scales it with `gameSpeed`.
+    ///
+    /// Divided by the frame count rather than written out, because the *cycle* is
+    /// the measured quantity and the per-frame time is only how it is spelled. The
+    /// sheet went from six frames to ten; at the 0.07 that used to be here the same
+    /// ten frames would have turned his legs over at 0.70s a stride, two-thirds
+    /// slower, and the extra drawings would have bought a slow-motion gallop
+    /// instead of the smoothness they are for.
     private var gallop: SKAction {
-        .repeatForever(.animate(with: DogArt.frames, timePerFrame: 0.07))
+        let frames = DogArt.frames
+        guard !frames.isEmpty else { return .wait(forDuration: 1) }
+        return .repeatForever(.animate(with: frames, timePerFrame: 0.42 / Double(frames.count)))
     }
 
     /// The jump arc, stretched to fit however long Benny is actually airborne,
     /// so retuning `jumpHeight` or gravity can't leave him landing three frames
-    /// early. Weighted rather than evenly spaced: the two airborne poses hold
-    /// longest, because that's where the flight spends its time.
+    /// early. Weighted rather than evenly spaced: the apex poses hold longest,
+    /// because that's where the flight spends its time.
+    ///
+    /// Ten weights for the sheet's ten frames — push-off, two rising, two at the
+    /// top, two coming down, and the landing. They are **normalised** rather than
+    /// trusted to add to one, which is the bug the count change found: six weights
+    /// summing to 1 with a `1/count` fallback came to 1.4 over ten frames, and an
+    /// arc 40% longer than the airtime lands Benny while he is still drawn in the
+    /// air. Normalising means the arc fills exactly the flight whatever the sheet
+    /// holds, and the numbers below only decide how the time is shared out.
     private var jumpArc: SKAction {
-        let weights: [CGFloat] = [0.12, 0.18, 0.22, 0.22, 0.16, 0.10]
+        let weights: [CGFloat] = [0.06, 0.08, 0.09, 0.09, 0.15, 0.15, 0.10, 0.10, 0.09, 0.09]
         let frames = DogArt.jumpFrames
         guard !frames.isEmpty else { return gallop }
 
+        let shares = frames.indices.map {
+            $0 < weights.count ? weights[$0] : 1 / CGFloat(frames.count)
+        }
+        let whole = shares.reduce(0, +)
+
         var steps: [SKAction] = []
         for (i, texture) in frames.enumerated() {
-            let share = i < weights.count ? weights[i] : 1 / CGFloat(frames.count)
+            let share = shares[i] / whole
             steps.append(.setTexture(texture))
             steps.append(.wait(forDuration: TimeInterval(airtime * share)))
         }
@@ -554,24 +576,50 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             withKey: "slideDust"
         )
 
+        // Down, hold the flattest pose, then back up through the same frames in
+        // reverse. The sheet draws only the way down — there is no recovery pose
+        // on it — and standing up is lying down played backwards, so the climb
+        // costs no art and still reads correctly.
+        //
+        // This used to name frames 0 through 3 outright, which was fine while the
+        // sheet had exactly four. With eight, frames four to seven — including the
+        // flat pose that actually clears the rail — were never drawn at all.
         let frames = DogArt.slideFrames
         let total = TimeInterval(Layout.slideDistance / gameSpeed)
-        let entry: TimeInterval = 0.06
-        let recover: TimeInterval = 0.10
-        let hold = max(0.08, total - entry * 2 - recover)
+        let down = Array(frames.dropLast())
+
+        // Getting up quicker than going down is both how it works and what keeps
+        // the flat pose on screen for most of the slide.
+        var perDown: TimeInterval = 0.05
+        var perUp: TimeInterval = 0.035
+        let minimumHold: TimeInterval = 0.12
+
+        // A slide covers a fixed distance, so at the top scroll speed it has under
+        // a second to do all this in. If the frames can't fit, both ends give way
+        // together rather than the hold being squeezed out of existence — a slide
+        // that never settles into the flat pose is a slide that looks like a
+        // stumble.
+        let moving = perDown * Double(down.count) + perUp * Double(down.count)
+        if moving > 0, moving + minimumHold > total {
+            let squeeze = max(0.1, (total - minimumHold) / moving)
+            perDown *= squeeze
+            perUp *= squeeze
+        }
+        let hold = max(minimumHold,
+                       total - (perDown + perUp) * Double(down.count))
 
         var steps: [SKAction] = []
-        for texture in frames.prefix(2) {
+        for texture in down {
             steps.append(.setTexture(texture))
-            steps.append(.wait(forDuration: entry))
+            steps.append(.wait(forDuration: perDown))
         }
-        if frames.count > 2 {
-            steps.append(.setTexture(frames[2]))
+        if let flat = frames.last {
+            steps.append(.setTexture(flat))
             steps.append(.wait(forDuration: hold))
         }
-        if frames.count > 3 {
-            steps.append(.setTexture(frames[3]))
-            steps.append(.wait(forDuration: recover))
+        for texture in down.reversed() {
+            steps.append(.setTexture(texture))
+            steps.append(.wait(forDuration: perUp))
         }
         steps.append(.run { [weak self] in self?.endSlide() })
 
