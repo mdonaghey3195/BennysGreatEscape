@@ -165,10 +165,11 @@ fetch() {
 step "Running the Hitbox Lab at $FPS fps"
 if (( ON_DEVICE )); then
     # The phone can't read plan.json from this Mac, so it travels in the
-    # environment instead.
+    # environment instead. The "--" keeps devicectl from reading the lab's
+    # arguments as its own options (it took -HitboxLab for -t, its timeout).
     ENV_JSON="$(python3 -c 'import json,sys; print(json.dumps({"LAB_PLAN": open(sys.argv[1]).read()}))' "$HERE/plan.json")"
     xcrun devicectl device process launch --device "$DEVICE" --terminate-existing \
-        --environment-variables "$ENV_JSON" "$BUNDLE" "${LAB_ARGS[@]}" > "$RUN_DIR/launch.log" 2>&1 \
+        --environment-variables "$ENV_JSON" -- "$BUNDLE" "${LAB_ARGS[@]}" > "$RUN_DIR/launch.log" 2>&1 \
         || { cat "$RUN_DIR/launch.log"; die "launch failed (is the phone unlocked?)"; }
     POLL=15
 else
