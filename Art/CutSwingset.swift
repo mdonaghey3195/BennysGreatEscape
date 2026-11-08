@@ -424,7 +424,7 @@ private func erase(_ sheet: Bitmap, strip: ClosedRange<Int>, from top: Int, to b
 // MARK: - The asset catalogue
 
 private func install(_ bitmap: Bitmap, named name: String) {
-    let directory = "BennysGreatEscape/Assets.xcassets/\(name).imageset"
+    let directory = "BennysGreatEscape/Assets.xcassets/phase_one/gameplay/obstacles/\(name).imageset"
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
     write(bitmap, to: "\(directory)/\(name).png")
     try! """

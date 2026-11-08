@@ -219,7 +219,7 @@ private func grow(_ sheet: Bitmap, by rows: Int) -> Bitmap {
 // MARK: - The asset catalogue
 
 private func install(_ bitmap: Bitmap, named name: String) {
-    let directory = "BennysGreatEscape/Assets.xcassets/\(name).imageset"
+    let directory = "BennysGreatEscape/Assets.xcassets/title_page/\(name).imageset"
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
     write(bitmap, to: "\(directory)/\(name).png")
     try! """

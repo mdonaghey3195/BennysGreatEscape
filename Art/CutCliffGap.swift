@@ -202,7 +202,7 @@ private func isVoid(_ x: Int, _ y: Int) -> Bool {
 /// this painting, the median first-turf row lands 25 rows high, partly on tufts
 /// clinging to the walls and partly on hill greens light enough to pass for
 /// turf. Everything below depends on these two numbers.
-private let ground = load("BennysGreatEscape/Assets.xcassets/bg_scroll.imageset/bg_scroll.png")
+private let ground = load("BennysGreatEscape/Assets.xcassets/phase_one/gameplay/backgrounds/bg_scroll.imageset/bg_scroll.png")
 
 private func groundLine(_ from: Int, _ test: (Bitmap, Int, Int) -> Bool) -> Int {
     var tops: [Int] = []
@@ -367,7 +367,7 @@ for i in 0..<sideFade {
 // MARK: - Installing
 
 private func install(_ bitmap: Bitmap, named name: String) {
-    let directory = "BennysGreatEscape/Assets.xcassets/\(name).imageset"
+    let directory = "BennysGreatEscape/Assets.xcassets/phase_one/gameplay/obstacles/\(name).imageset"
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
     write(bitmap, to: "\(directory)/\(name).png")
     try! """
