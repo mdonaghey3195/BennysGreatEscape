@@ -143,6 +143,9 @@ fi
 APP="$DERIVED/Build/Products/$PRODUCTS/BennysGreatEscape.app"
 BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
 echo "$APP"
+if (( FPS > 60 )) && ! /usr/libexec/PlistBuddy -c 'Print :CADisableMinimumFrameDurationOnPhone' "$APP/Info.plist" >/dev/null 2>&1; then
+    die "this build can't run above 60 fps: CADisableMinimumFrameDurationOnPhone is missing from its Info.plist (see Tools/hitbox-lab/Debug-Info.plist)"
+fi
 
 # --- Install and run -------------------------------------------------------
 

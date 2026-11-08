@@ -293,6 +293,9 @@ final class HitboxLab {
     private var pacedFrames = 0
     private var droppedFrames = 0
     private var longestFrame: CFTimeInterval = 0
+    /// Set while the lab itself holds the view still for a screenshot, so that
+    /// pause isn't counted against the device's frame pacing.
+    private var skipPacing = false
     private var started = false
 
     // Per-trial contact state, written by `observe`.
@@ -329,13 +332,14 @@ final class HitboxLab {
             view.preferredFramesPerSecond = fps
         }
         let now = CACurrentMediaTime()
-        if pacingStart > 0 {
+        if pacingStart > 0, !skipPacing {
             let dt = now - lastTick
             pacedFrames += 1
             longestFrame = max(longestFrame, dt)
             if dt > 1.5 / Double(fps) { droppedFrames += 1 }
         }
         lastTick = now
+        skipPacing = false
         scene?.labHoldWorld()
         if !started, frameCount > 30 {
             started = true
@@ -859,7 +863,10 @@ final class HitboxLab {
     func capture(name: String, sample: LabSample, box: CGRect?, shapes: [LabShape], text: String) async -> [String] {
         guard let scene, let view = scene.view else { return [] }
         view.isPaused = true
-        defer { view.isPaused = false }
+        defer {
+            view.isPaused = false
+            skipPacing = true
+        }
 
         let layer = SKNode()
         layer.zPosition = 900

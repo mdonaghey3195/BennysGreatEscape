@@ -32,7 +32,7 @@ Tools/hitbox-lab/validate.sh --on-device --fps 120    # what 120 Hz would do to 
 
 The phone needs to be paired with this Mac (USB or the same Wi-Fi), unlocked, with Developer Mode on. Low Power Mode off and plugged in is best. The lab keeps the screen awake for the run. Results are copied back to `build/hitbox-lab/<timestamp>/validate/`; screenshots stay on the phone unless you pass `--screenshots`.
 
-At 60 fps a phone should match the simulator's `expected.json` exactly. If it doesn't, that's the finding. The game doesn't ask for 120 Hz today (there's no `CADisableMinimumFrameDurationOnPhone`), so `--fps 120` is a preview. Debug builds carry that Info.plist key so the lab can ask for 120; normal play still runs at SpriteKit's default of 60. Every frame count the lab uses is scaled by the frame rate, so a 120 Hz trial waits the same real time as a 60 Hz one.
+At 60 fps a phone should match the simulator's `expected.json` exactly. If it doesn't, that's the finding. The game doesn't ask for 120 Hz today (there's no `CADisableMinimumFrameDurationOnPhone`), so `--fps 120` is a preview. Debug builds merge that key in from `Debug-Info.plist` (it is not a build setting Xcode recognises) so the lab can ask for 120; normal play still runs at SpriteKit's default of 60. Every frame count the lab uses is scaled by the frame rate, so a 120 Hz trial waits the same real time as a 60 Hz one.
 
 Every run writes `device.json`: model, iOS version, the frame rate asked for and measured, dropped frames, longest frame, Low Power Mode and thermal state. The check fails if the run achieved under 90% of the frame rate it asked for, and warns on more than 1% dropped frames, Low Power Mode, or thermal throttling.
 
