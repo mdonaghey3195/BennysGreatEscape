@@ -369,17 +369,22 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// Standing and ducked share a shape: a box whose bottom sits on the paw
     /// line. A fresh body inherits none of the masks, so they're reapplied here
     /// rather than at each call site.
-    private func makeDogPhysics(ducked: Bool) -> SKPhysicsBody {
+    private func makeDogPhysics(ducked: Bool, lift: CGFloat = 0) -> SKPhysicsBody {
         let size = Layout.dogSize
         // Pulled off the leading edge only — see `DogArt.forgivenessFraction`.
         // Half off the width and half off the centre, which moves the right edge
         // in and leaves the left where it is: the trailing edge is already
         // behind his tail and giving away ground there would buy nothing.
         let give = DogArt.forgivenessFraction
+        // `lift` raises the box's floor to where this pose actually meets the
+        // ground, taking the height off the bottom so the back stays put — see
+        // `DogArt.jumpLifts`. Nought leaves the floor on the paw line, which is
+        // what every grounded pose wants.
         let box = CGSize(
             width: size.width
                 * ((ducked ? DogArt.slideWidthFraction : DogArt.bodyWidthFraction) - give),
-            height: size.height * (ducked ? DogArt.slideHeightFraction : DogArt.bodyHeightFraction)
+            height: size.height
+                * ((ducked ? DogArt.slideHeightFraction : DogArt.bodyHeightFraction) - lift)
         )
         let body = SKPhysicsBody(
             rectangleOf: box,
@@ -387,7 +392,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
                 x: size.width
                     * ((ducked ? DogArt.slideOffsetXFraction : DogArt.bodyOffsetXFraction)
                        - give / 2),
-                y: (box.height - size.height) / 2
+                y: (box.height - size.height) / 2 + size.height * lift
             )
         )
         body.categoryBitMask = PhysicsCategory.dog
@@ -471,6 +476,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         for (i, texture) in frames.enumerated() {
             let share = shares[i] / whole
             steps.append(.setTexture(texture))
+            // The hitbox follows the drawing. Paired with the texture rather
+            // than run on a timer of its own, so the two can never drift.
+            steps.append(.run { [weak self] in self?.wearJumpBody(frame: i) })
             steps.append(.wait(forDuration: TimeInterval(airtime * share)))
         }
         // Runs once and leaves the landing pose showing — if he's somehow still
@@ -649,7 +657,40 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// of its own. That is the whole of what made a slide hand out free jumps
     /// for the rest of a run.
     private func setDucked(_ ducked: Bool) {
+        dogBodyLift = 0
         dog.physicsBody = makeDogPhysics(ducked: ducked)
+    }
+
+    /// How much the body Benny is currently wearing has had its floor raised.
+    ///
+    /// Tracked rather than recomputed because it is what says a lifted body is
+    /// still on, and so has to come off — see `update`.
+    private var dogBodyLift: CGFloat = 0
+
+    /// Puts a fresh body on without losing the flight it was in the middle of.
+    ///
+    /// A body cannot be resized, only replaced, and a replacement starts at
+    /// rest. Carrying the velocity across is the whole reason this is a
+    /// function and not two lines at each call site.
+    private func wearDogBody(lift: CGFloat) {
+        let carried = dog.physicsBody?.velocity ?? .zero
+        let fresh = makeDogPhysics(ducked: false, lift: lift)
+        dog.physicsBody = fresh
+        fresh.velocity = carried
+        dogBodyLift = lift
+    }
+
+    /// Matches the hitbox to the jump pose being drawn.
+    ///
+    /// Only in the air. On the ground a raised floor would hover above the turf,
+    /// the ground contact would report itself ended, and he would be handed a
+    /// second jump out of his own landing — which is the shape of the bug a
+    /// swapped hitbox caused once already, in `setDucked`.
+    private func wearJumpBody(frame index: Int) {
+        guard !isGameOver, !isSliding else { return }
+        let wanted = isOnGround ? 0 : DogArt.jumpLift(index)
+        guard wanted != dogBodyLift else { return }
+        wearDogBody(lift: wanted)
     }
 
     private func jump() {
@@ -1660,6 +1701,14 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let delta = min(currentTime - lastUpdateTime, 1.0 / 30)
         lastUpdateTime = currentTime
 
+        // A lifted jump box must not outlive the jump: standing on the turf with
+        // a raised floor, Benny hovers and the contact flickers. Put back here
+        // rather than in `didBegin`, because replacing a body from inside a
+        // contact callback re-enters that callback.
+        if isOnGround, dogBodyLift != 0, !isSliding {
+            wearDogBody(lift: 0)
+        }
+
         // Everything below this line belongs to the world `beginPhaseTwo` takes
         // down. Nothing in the flying phase is stepped from here yet — the sky
         // drifts on an action and Benny bobs on one — so this is the whole of
@@ -2661,6 +2710,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         introRidesAlong = false
         worldScroll = 1
         score = 0
+        dogBodyLift = 0        // the body is rebuilt below; the tally must agree
         isGameOver = false
         isSliding = false
         hasLeftGround = false
