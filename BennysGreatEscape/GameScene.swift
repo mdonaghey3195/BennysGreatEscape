@@ -1723,6 +1723,13 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // contact callback re-enters that callback.
         if isOnGround, dogBodyLift != 0, !isSliding {
             wearDogBody(lift: 0)
+            // He came down on the lifted floor, so the drawing landed that far
+            // into the turf, and the full box now overlaps the ground by the
+            // same amount. Left there, the physics pops him out of it — a
+            // visible bounce — and a jump taken on this frame starts from the
+            // sunk height and peaks that much lower. Stand him back on the turf.
+            let standing = Layout.dogGroundLine + Layout.dogSize.height / 2
+            if dog.position.y < standing { dog.position.y = standing }
         }
 
         // Everything below this line belongs to the world `beginPhaseTwo` takes
