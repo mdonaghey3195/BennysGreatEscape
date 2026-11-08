@@ -279,6 +279,20 @@ final class HitboxLab {
 
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private(set) var frameCount = 0
+
+    /// The frame rate asked for (-LabFPS, default 60), and how many of its frames
+    /// make one 60 Hz frame — every count below that means "frames" was tuned at
+    /// 60, so at 120 it is doubled to keep meaning the same time.
+    let fps: Int = Int(HitboxLab.argument("-LabFPS") ?? "") ?? 60
+    var frameScale: Double { Double(fps) / 60 }
+    func frames(_ n: Int) -> Int { Int((Double(n) * frameScale).rounded()) }
+
+    /// Frame pacing over the measured part of the run.
+    private var pacingStart: CFTimeInterval = 0
+    private var lastTick: CFTimeInterval = 0
+    private var pacedFrames = 0
+    private var droppedFrames = 0
+    private var longestFrame: CFTimeInterval = 0
     private var started = false
 
     // Per-trial contact state, written by `observe`.
@@ -309,6 +323,19 @@ final class HitboxLab {
     /// Called from `GameScene.didFinishUpdate`, after physics, every frame.
     func tick() {
         frameCount += 1
+        // SwiftUI may set the view's frame rate again on any update, so it is
+        // re-asserted every frame rather than once.
+        if let view = scene?.view, view.preferredFramesPerSecond != fps {
+            view.preferredFramesPerSecond = fps
+        }
+        let now = CACurrentMediaTime()
+        if pacingStart > 0 {
+            let dt = now - lastTick
+            pacedFrames += 1
+            longestFrame = max(longestFrame, dt)
+            if dt > 1.5 / Double(fps) { droppedFrames += 1 }
+        }
+        lastTick = now
         scene?.labHoldWorld()
         if !started, frameCount > 30 {
             started = true
@@ -368,10 +395,15 @@ final class HitboxLab {
         for name in ["results.jsonl", "sweep.jsonl", "DONE"] where mode != "cases" || name != "sweep.jsonl" {
             try? FileManager.default.removeItem(at: out.appendingPathComponent(name))
         }
-        if let data = try? Data(contentsOf: root.appendingPathComponent("plan.json")),
-           let decoded = try? JSONDecoder().decode([String: [String: Double]].self, from: data) {
+        // On a device the plan arrives in the environment, since the app can't
+        // read the Mac's files; in the simulator it is a file beside the results.
+        let planData = ProcessInfo.processInfo.environment["LAB_PLAN"].flatMap { $0.data(using: .utf8) }
+            ?? (try? Data(contentsOf: root.appendingPathComponent("plan.json")))
+        if let planData, let decoded = try? JSONDecoder().decode([String: [String: Double]].self, from: planData) {
             plan = decoded
         }
+        // A locked phone suspends the app and the run with it.
+        UIApplication.shared.isIdleTimerDisabled = true
         status("started mode=\(mode) only=\(only ?? "-") plan=\(plan.isEmpty ? "none" : "loaded")")
 
         // Warm-up: the first trials after launch run while textures and audio
@@ -382,6 +414,10 @@ final class HitboxLab {
         warmup.tier = GameScene.Layout.openingSpeed
         warmup.inputs = [.at(0, .jump)]
         for _ in 0..<2 { _ = await trial(warmup, d: 117, stopAt: nil, captureHit: nil) }
+        pacingStart = CACurrentMediaTime()
+        pacedFrames = 0
+        droppedFrames = 0
+        longestFrame = 0
 
         if mode == "sweep" || mode == "all" { await runSweeps() }
         if mode == "cases" || mode == "all" {
@@ -391,9 +427,41 @@ final class HitboxLab {
                 await runCase(c)
             }
         }
+        writeDeviceReport()
+        UIApplication.shared.isIdleTimerDisabled = false
         status("done")
         try? "done\n".data(using: .utf8)?.write(to: out.appendingPathComponent("DONE"))
         print("LAB DONE")
+    }
+
+    /// What the run was measured on, and how steadily it ran — `check.py` reads
+    /// it to tell a slow or throttled machine from a real regression.
+    private func writeDeviceReport() {
+        var system = utsname()
+        uname(&system)
+        let model = withUnsafeBytes(of: &system.machine) { raw in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        let elapsed = lastTick - pacingStart
+        let report: [String: Any] = [
+            "model": ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? model,
+            "simulator": ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"] != nil,
+            "os": UIDevice.current.systemVersion,
+            "requestedFPS": fps,
+            "measuredFPS": elapsed > 0 ? Double(pacedFrames) / elapsed : 0,
+            "frames": pacedFrames,
+            "droppedFrames": droppedFrames,
+            "longestFrameMs": longestFrame * 1000,
+            "lowPowerMode": ProcessInfo.processInfo.isLowPowerModeEnabled,
+            "thermalState": ProcessInfo.processInfo.thermalState.rawValue,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: out.appendingPathComponent("device.json"))
+        }
+        // The screenshots, by name, so a device run can be fetched file by file.
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: out.path))?
+            .filter { $0.hasSuffix(".png") }.sorted() ?? []
+        try? (names.joined(separator: "\n") + "\n").data(using: .utf8)?.write(to: out.appendingPathComponent("files.txt"))
     }
 
     // MARK: Cases
@@ -586,11 +654,11 @@ final class HitboxLab {
         scene.labSpeed = c.speed
         var grounded = 0
         var waited = 0
-        while grounded < 10 {
+        while grounded < frames(10) {
             await nextFrame()
             waited += 1
             grounded = scene.labGrounded && !scene.labSliding ? grounded + 1 : 0
-            if waited > 400 { result.outcome = "NOGROUND"; return result }
+            if waited > frames(400) { result.outcome = "NOGROUND"; return result }
         }
 
         // L-7: crash for real first, retry, and only then run the case.
@@ -601,13 +669,13 @@ final class HitboxLab {
             _ = scene.labPlace(crashPiece, height: crashHeight, centreX: GameScene.Layout.dogX + d)
             scene.labJump()
             var waitedCrash = 0
-            while !scene.labGameOver, waitedCrash < 200 { await nextFrame(); waitedCrash += 1 }
+            while !scene.labGameOver, waitedCrash < frames(200) { await nextFrame(); waitedCrash += 1 }
             result.note = scene.labGameOver ? "crashed at +\(waitedCrash), retried" : "did not crash"
-            for _ in 0..<20 { await nextFrame() }
+            for _ in 0..<frames(20) { await nextFrame() }
             scene.labTapToRetry()
             scene.labSpeed = c.speed
             grounded = 0
-            while grounded < 10 {
+            while grounded < frames(10) {
                 await nextFrame()
                 grounded = scene.labGrounded ? grounded + 1 : 0
             }
@@ -657,7 +725,7 @@ final class HitboxLab {
         func inputs(frame: Int, pose: String, newlyLanded: Bool) {
             for (i, input) in c.inputs.enumerated() where !fired.contains(i) {
                 switch input {
-                case let .at(f, action) where f == frame:
+                case let .at(f, action) where frames(f) == frame:
                     fired.insert(i); apply(action)
                 case let .onPose(p, action) where frame > 0 && p == pose:
                     fired.insert(i); apply(action)
@@ -766,7 +834,7 @@ final class HitboxLab {
             inputs(frame: frame, pose: s.pose, newlyLanded: newlyLanded)
 
             let allCleared = !obstacles.isEmpty && cleared.count == obstacles.count
-            let landedAndSettled = landing.map { frame > $0 + 20 } ?? false
+            let landedAndSettled = landing.map { frame > $0 + frames(20) } ?? false
             var waitingOnInput = false
             for (i, input) in c.inputs.enumerated() {
                 if case .jumpOnEveryLanding(let n) = input {
@@ -777,7 +845,8 @@ final class HitboxLab {
             }
             if stopAt == nil, allCleared, !airborne || landedAndSettled, !waitingOnInput { break }
             if stopAt == nil, obstacles.isEmpty, c.piece != .cliff, landedAndSettled, !waitingOnInput { break }
-            if frame >= (stopAt.map { max($0 + 5, c.maxFrames) } ?? c.maxFrames) { break }
+            let limit = frames(c.maxFrames)
+            if frame >= (stopAt.map { max($0 + 5, limit) } ?? limit) { break }
         }
         result.groundEvents = groundLog
         if c.piece == .none || c.piece == .cliff, result.hitFrame == nil { result.outcome = "DONE" }

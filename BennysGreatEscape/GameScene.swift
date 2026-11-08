@@ -2822,7 +2822,7 @@ extension GameScene {
         guard HitboxLab.configure(scene: self) != nil else { return }
         // Straight into a run: no title clip, nothing spawning on its own.
         hasStarted = true
-        view.preferredFramesPerSecond = 60
+        view.preferredFramesPerSecond = HitboxLab.shared?.fps ?? 60
     }
 
     /// Every frame: hold the speed the lab set and keep the spawner idle.

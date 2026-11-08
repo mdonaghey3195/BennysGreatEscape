@@ -4,6 +4,7 @@
     check.py RESULTS_DIR [--expected expected.json]
     check.py RESULTS_DIR --record [--expected expected.json]
     check.py RESULTS_DIR --partial     # a run of some cases only (-LabOnly)
+    check.py RESULTS_DIR --invariants-only   # e.g. a 120 Hz run, which has no golden file yet
 
 RESULTS_DIR holds the lab's results.jsonl (cases mode). Exits 0 when every
 check passes, 1 when any fails. --record writes the run as the new expected
@@ -165,12 +166,37 @@ def invariants(c, run, partial=False):
     c.ok(not flaky, 'no flaky cases', ', '.join(flaky))
 
 
+def pacing(c, results):
+    """The run's own frame pacing, from device.json, if the lab wrote one."""
+    folder = results if os.path.isdir(results) else os.path.dirname(results)
+    path = os.path.join(folder, 'device.json')
+    if not os.path.exists(path):
+        return None
+    with open(path) as fh:
+        d = json.load(fh)
+    want, got = d.get('requestedFPS', 60), d.get('measuredFPS', 0)
+    frames, dropped = d.get('frames', 0) or 1, d.get('droppedFrames', 0)
+    where = 'simulator' if d.get('simulator') else 'device'
+    print(f"  {where} {d.get('model')} iOS {d.get('os')}: {got:.1f} of {want} fps, "
+          f"{dropped} dropped of {frames} ({dropped / frames:.1%}), longest frame {d.get('longestFrameMs', 0):.0f} ms")
+    # Below 90% of the asked-for rate the run is not testing what it says it is.
+    c.ok(got >= 0.9 * want, f'ran at {want} fps', f'measured {got:.1f} fps')
+    if dropped / frames > 0.01:
+        c.warn(f'{dropped} dropped frames ({dropped / frames:.1%}); results near an edge may move by a frame')
+    if d.get('lowPowerMode'):
+        c.warn('Low Power Mode was on (caps the frame rate at 60)')
+    if d.get('thermalState', 0) >= 2:
+        c.warn(f"device was thermally throttled (state {d['thermalState']})")
+    return d
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('results', help='folder with results.jsonl, or the file itself')
     ap.add_argument('--expected', default=os.path.join(HERE, 'expected.json'))
     ap.add_argument('--record', action='store_true', help='write this run as the expected results')
     ap.add_argument('--partial', action='store_true', help='only check the cases this run contains')
+    ap.add_argument('--invariants-only', action='store_true', help='skip the golden outcomes')
     args = ap.parse_args()
 
     run = load_results(args.results)
@@ -184,11 +210,14 @@ def main():
         print(f'Recorded {len(expected)} cases to {args.expected}')
         return 0
 
-    with open(args.expected) as fh:
-        expected = json.load(fh)['cases']
-
     c = Checks()
-    golden(c, run, expected, args.partial)
+    pacing(c, args.results)
+    if args.invariants_only:
+        print('  (golden outcomes skipped: invariants only)')
+    else:
+        with open(args.expected) as fh:
+            expected = json.load(fh)['cases']
+        golden(c, run, expected, args.partial)
     invariants(c, run, args.partial)
 
     for w in c.warnings:
