@@ -8,11 +8,12 @@ A DEBUG-only harness (`BennysGreatEscape/HitboxLab.swift`) that stages obstacles
 Tools/hitbox-lab/validate.sh
 ```
 
-Builds the app, boots the iPhone 17 Pro Max simulator, runs all 104 cases (about 6 minutes) and checks them against `expected.json`. Exits 0 on pass, 1 on a failed check, 2 if the run itself couldn't happen. Leave the Mac alone while it runs: the lab counts frames, and dropped frames can move a hit by one.
+Builds the app, boots the iPhone 17 Pro Max simulator, runs every case (about 20 minutes; `--quick` runs the original 104 in about 6) and checks them. Exits 0 on pass, 1 on a failed check, 2 if the run itself couldn't happen. Leave the Mac alone while it runs: the lab counts frames, and dropped frames can move a hit by one.
 
 | Option | What it does |
 | --- | --- |
-| `--only J-LOG` | Run only cases whose ID starts with this; only those are checked |
+| `--quick` | Only the J, D and L families, about 6 minutes |
+| `--only J-LOG,T-log` | Run only cases whose ID starts with one of these; only those are checked |
 | `--device "iPhone 16 Pro"` | Use another simulator |
 | `--record` | Accept this run as the new `expected.json` |
 | `--on-device [name]` | Run on a connected iPhone instead (the first one, or the one named) |
@@ -36,6 +37,19 @@ At 60 fps a phone should match the simulator's `expected.json` exactly. If it do
 
 Every run writes `device.json`: model, iOS version, the frame rate asked for and measured, dropped frames, longest frame, Low Power Mode and thermal state. The check fails if the run achieved under 90% of the frame rate it asked for, and warns on more than 1% dropped frames, Low Power Mode, or thermal throttling.
 
+## The cases
+
+| Family | What it stages | Count |
+| --- | --- | --- |
+| J | Each jump prop at the opening speed, hit on every side: late, early, over the top, barely hitting and barely missing | 50 |
+| D | Bench, occupied bench and swingset: standing, sliding early or late, jumping in, jumping out of a slide | 27 |
+| L | Box audit, landing, back-to-back jumps, mid-air swipes, jumping or sliding on touchdown, crash and retry, cliffs | 27 |
+| T | Each prop's clear window at every speed tier: one frame inside each edge, one outside, and the edge itself | 102 |
+| H | Jumps and slides from J and D with the main thread stalled 50 or 100 ms partway through | 114 |
+| C | Whole generated courses from seeds 1, 2 and 3, played by a bot to score 50 (past top speed) | 3 |
+
+The course bot answers each obstacle at the middle of its window in seconds: 0.47 s out for a jump prop, 0.54 s for a slide, half a jump for a cliff. A jump waits until any bench Benny is under has gone by. The spawner's rolls come from `SpawnDice`, which is the system's randomness in normal play and a fixed sequence only when the lab seeds it, so a failing seed replays the identical course.
+
 ## What is checked
 
 - **Golden outcomes:** every case's outcome matches `expected.json`. A hit must land within one frame of where it used to; a one-frame drift is a warning, more is a failure. This keeps the fixed phantom hits fixed and the real hits real.
@@ -46,6 +60,9 @@ Every run writes `device.json`: model, iOS version, the frame rate asked for and
   - a jump keeps its jump poses and box lifts in flight, including on the touchdown frame and out of a slide;
   - a landing sinks no more than 3pt and bounces no more than 6pt;
   - no flaky cases.
+- **Speed tiers (T):** one frame inside either edge of a window must clear, or the window has shrunk. Clearing one frame outside warns that it grew; the edge itself only warns if it changes.
+- **Hitches (H):** a stall must never turn a clear into a hit. Each H case is compared with the J or D case it copies.
+- **Courses (C):** every course plays through to score 50 with no hit and no fall. The summary line lists what came up and how fast it got.
 
 ## Changing the hitbox on purpose
 

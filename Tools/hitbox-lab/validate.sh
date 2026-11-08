@@ -3,8 +3,9 @@
 # Hitbox validation: build the app, run the Hitbox Lab in an iOS simulator or on
 # a connected iPhone, and check the results against Tools/hitbox-lab/expected.json.
 #
-#   Tools/hitbox-lab/validate.sh                       # simulator, all cases, ~6 minutes
-#   Tools/hitbox-lab/validate.sh --only J-LOG          # just the cases starting J-LOG
+#   Tools/hitbox-lab/validate.sh                       # simulator, everything, ~20 minutes
+#   Tools/hitbox-lab/validate.sh --quick               # the 104 staged cases only, ~6 minutes
+#   Tools/hitbox-lab/validate.sh --only J-LOG,T-log    # cases starting with any of these
 #   Tools/hitbox-lab/validate.sh --device "iPhone 16 Pro"
 #   Tools/hitbox-lab/validate.sh --on-device           # the first connected iPhone
 #   Tools/hitbox-lab/validate.sh --on-device "Matt's iPhone" --fps 120
@@ -17,6 +18,10 @@
 # Leave the machine alone while it runs: the lab counts frames, and dropped
 # frames can move a hit by one. On a phone: unlocked, Developer Mode on, not in
 # Low Power Mode, and plugged in if you can.
+#
+# Case families: J jump props, D duck props, L landing and state (the --quick
+# set); T window edges at every speed tier; H hitches mid-move; C whole
+# generated courses played by a bot.
 #
 # --fps 120 asks for ProMotion's 120 Hz (Debug builds only; the game itself runs
 # at 60). There is no expected file for it yet, so it checks the invariants only
@@ -32,9 +37,9 @@ ONLY=""
 RECORD=0
 SHOTS=0
 EXPECTED=""
-TIMEOUT=1200
+TIMEOUT=3600
 
-usage() { sed -n '3,24p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '3,29p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -45,6 +50,7 @@ while [[ $# -gt 0 ]]; do
             shift ;;
         --fps)       FPS="$2"; shift 2 ;;
         --only)      ONLY="$2"; shift 2 ;;
+        --quick)     ONLY="J-,D-,L-"; shift ;;
         --record)    RECORD=1; shift ;;
         --expected)  EXPECTED="$2"; shift 2 ;;
         --screenshots) SHOTS=1; shift ;;

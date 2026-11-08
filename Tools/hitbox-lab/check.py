@@ -60,8 +60,13 @@ class Checks:
         self.warnings.append(what)
 
 
+RULE_BASED = ('T-', 'H-', 'C-')
+
+
 def golden(c, run, expected, partial=False):
     for cid, exp in sorted(expected.items()):
+        if cid.startswith(RULE_BASED):
+            continue
         got = run.get(cid)
         if got is None and partial:
             continue
@@ -76,7 +81,59 @@ def golden(c, run, expected, partial=False):
             if drift == 1:
                 c.warn(f"{cid}: hit one frame {'later' if got['hitFrame'] > exp['hitFrame'] else 'earlier'} than expected")
     for cid in sorted(set(run) - set(expected)):
-        c.warn(f'{cid}: new case with no expected result (outcome {run[cid]["outcome"]})')
+        if not cid.startswith(RULE_BASED):
+            c.warn(f'{cid}: new case with no expected result (outcome {run[cid]["outcome"]})')
+
+
+def tiers(c, run, expected):
+    """T cases: the clear window at every speed tier keeps its size."""
+    for cid, r in sorted(run.items()):
+        if not cid.startswith('T-') or r['outcome'] == 'N/A':
+            continue
+        edge = 'late' if '-LO-' in cid else 'early'
+        if cid.endswith('-IN'):
+            c.ok(r['outcome'] == 'CLEAR', f'{cid} clears',
+                 f"{r['outcome']} one frame inside the {edge} edge (d {r['d']:.2f}): the window shrank by more than a frame")
+        elif cid.endswith('-OUT') and r['outcome'] == 'CLEAR':
+            c.warn(f"{cid}: clears one frame outside the {edge} edge (d {r['d']:.2f}): the window grew by more than a frame")
+        elif cid.endswith('-EDGE'):
+            exp = expected.get(cid)
+            if exp and exp['outcome'] != r['outcome']:
+                c.warn(f"{cid}: {exp['outcome']} -> {r['outcome']} at the {edge} edge (moved by less than a frame)")
+
+
+def hitches(c, run, partial=False):
+    """H cases: a hitch never turns a clear into a hit."""
+    for cid, r in sorted(run.items()):
+        if not cid.startswith('H-') or r['outcome'] == 'N/A':
+            continue
+        base_id = cid[2:].split('@')[0]
+        base = run.get(base_id)
+        when = cid.split('@')[1]
+        if base is None:
+            if not partial:
+                c.ok(False, cid, f'its base case {base_id} was not run')
+            continue
+        if base['outcome'] == 'CLEAR':
+            c.ok(r['outcome'] == 'CLEAR', f'{cid} still clears',
+                 f"a hitch at {when} turned a clear into a {r['outcome']} ({r.get('hitPose') or ''} f{r.get('hitFrame')})")
+        elif base['outcome'] == 'HIT' and r['outcome'] == 'CLEAR':
+            c.warn(f'{cid}: a hitch at {when} turned a hit into a clear')
+
+
+def courses(c, run):
+    """C cases: a generated course, played at each window's centre, never fails."""
+    for cid, r in sorted(run.items()):
+        if not cid.startswith('C-'):
+            continue
+        notes = r.get('notes') or []
+        summary = notes[0] if notes else ''
+        print(f'  info  {cid}: {summary}')
+        c.ok(r['outcome'] == 'CLEAR', f'{cid} plays through ({summary})',
+             '; '.join(n for n in notes[1:]) or r['outcome'])
+        for n in notes[1:]:
+            if r['outcome'] == 'CLEAR':
+                c.warn(f'{cid}: {n}')
 
 
 def invariants(c, run, partial=False):
@@ -218,6 +275,11 @@ def main():
         with open(args.expected) as fh:
             expected = json.load(fh)['cases']
         golden(c, run, expected, args.partial)
+        tiers(c, run, expected)
+    if args.invariants_only:
+        tiers(c, run, {})
+    hitches(c, run, args.partial)
+    courses(c, run)
     invariants(c, run, args.partial)
 
     for w in c.warnings:

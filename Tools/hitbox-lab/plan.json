@@ -8,7 +8,8 @@
   "earlyMiss": 207.75,
   "earlyMissBoth": 207.75,
   "lateHit": 59.5,
-  "lateMiss": 60.25
+  "lateMiss": 60.25,
+  "winHi": 208
  },
  "bush@250": {
   "centre": 117.25,
@@ -20,7 +21,9 @@
   "lateHit": 95.75,
   "lateMiss": 99.0,
   "latePhantom": 97.38,
-  "phantom": 137.0
+  "phantom": 137.0,
+  "winHi": 138,
+  "winLo": 96.25
  },
  "bush@290": {
   "centre": 135.38,
@@ -32,7 +35,9 @@
   "lateHit": 112.0,
   "lateMiss": 114.5,
   "latePhantom": 113.25,
-  "phantom": 158.0
+  "phantom": 158.0,
+  "winHi": 159.25,
+  "winLo": 112.5
  },
  "bush@335": {
   "centre": 156.12,
@@ -43,7 +48,9 @@
   "earlyMissBoth": 179.25,
   "lateHit": 132.25,
   "lateMiss": 133.0,
-  "phantom": 181.38
+  "phantom": 181.38,
+  "winHi": 183,
+  "winLo": 132.75
  },
  "hedge@250": {
   "centre": 118.38,
@@ -53,7 +60,9 @@
   "earlyMiss": 138.5,
   "earlyMissBoth": 138.5,
   "lateHit": 97.5,
-  "lateMiss": 98.25
+  "lateMiss": 98.25,
+  "winHi": 138.75,
+  "winLo": 98
  },
  "hedge@290": {
   "centre": 136.88,
@@ -63,7 +72,9 @@
   "earlyMiss": 160.25,
   "earlyMissBoth": 160.25,
   "lateHit": 112.75,
-  "lateMiss": 113.5
+  "lateMiss": 113.5,
+  "winHi": 160.5,
+  "winLo": 113.25
  },
  "hedge@335": {
   "centre": 155.12,
@@ -74,7 +85,9 @@
   "earlyMissBoth": 179.75,
   "lateHit": 129.75,
   "lateMiss": 130.5,
-  "phantom": 183.0
+  "phantom": 183.0,
+  "winHi": 185.75,
+  "winLo": 130.25
  },
  "log@250": {
   "centre": 118.25,
@@ -85,7 +98,9 @@
   "earlyMissBoth": 138.5,
   "lateHit": 93.0,
   "lateMiss": 98.0,
-  "latePhantom": 95.5
+  "latePhantom": 95.5,
+  "winHi": 138.75,
+  "winLo": 93.5
  },
  "log@290": {
   "centre": 136.62,
@@ -96,7 +111,9 @@
   "earlyMissBoth": 158.75,
   "lateHit": 109.0,
   "lateMiss": 114.5,
-  "latePhantom": 111.75
+  "latePhantom": 111.75,
+  "winHi": 159,
+  "winLo": 109.5
  },
  "log@335": {
   "centre": 157.62,
@@ -107,7 +124,9 @@
   "earlyMissBoth": 182.0,
   "lateHit": 132.5,
   "lateMiss": 133.25,
-  "phantom": 185.25
+  "phantom": 185.25,
+  "winHi": 188,
+  "winLo": 133
  },
  "logStack@250": {
   "centre": 117.62,
@@ -118,7 +137,9 @@
   "earlyMissBoth": 136.75,
   "lateHit": 97.75,
   "lateMiss": 98.5,
-  "phantom": 139.19
+  "phantom": 139.19,
+  "winHi": 141.132,
+  "winLo": 98.25
  },
  "logStack@290": {
   "centre": 135.88,
@@ -128,7 +149,9 @@
   "earlyMiss": 158.0,
   "earlyMissBoth": 158.0,
   "lateHit": 113.0,
-  "lateMiss": 113.75
+  "lateMiss": 113.75,
+  "winHi": 158.25,
+  "winLo": 113.5
  },
  "logStack@335": {
   "centre": 156.75,
@@ -138,7 +161,9 @@
   "earlyMiss": 182.5,
   "earlyMissBoth": 182.5,
   "lateHit": 130.25,
-  "lateMiss": 131.0
+  "lateMiss": 131.0,
+  "winHi": 182.75,
+  "winLo": 130.75
  },
  "stump@250": {
   "centre": 118.32,
@@ -148,7 +173,9 @@
   "earlyMiss": 138.88,
   "earlyMissBoth": 138.88,
   "lateHit": 97.0,
-  "lateMiss": 97.75
+  "lateMiss": 97.75,
+  "winHi": 139.132,
+  "winLo": 97.5
  },
  "stump@290": {
   "centre": 134.25,
@@ -159,7 +186,9 @@
   "earlyMissBoth": 156.5,
   "lateHit": 111.25,
   "lateMiss": 112.0,
-  "phantom": 159.25
+  "phantom": 159.25,
+  "winHi": 161.5,
+  "winLo": 111.75
  },
  "stump@335": {
   "centre": 157.62,
@@ -170,7 +199,9 @@
   "earlyMissBoth": 181.5,
   "lateHit": 127.5,
   "lateMiss": 133.75,
-  "latePhantom": 130.62
+  "latePhantom": 130.62,
+  "winHi": 181.75,
+  "winLo": 128
  },
  "swingset/hurdle": {},
  "swingset/slide": {
@@ -181,6 +212,7 @@
   "earlyMiss": 218.0,
   "earlyMissBoth": 218.0,
   "lateHit": 59.5,
-  "lateMiss": 60.25
+  "lateMiss": 60.25,
+  "winHi": 218.25
  }
 }

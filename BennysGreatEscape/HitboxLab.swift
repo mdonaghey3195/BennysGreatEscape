@@ -56,6 +56,8 @@ enum LabInput {
     case jumpOnEveryLanding(Int)
     /// When obstacle `index` has passed behind Benny's box.
     case whenCleared(Int, LabAction)
+    /// Stall the main thread this many milliseconds at this frame: a hitch.
+    case hitch(Int, Int)
 }
 
 enum LabFreeze {
@@ -66,6 +68,8 @@ enum LabFreeze {
     case frames([Int])
     case poses([String])
     case landing([Int])
+    /// A screenshot only if the first run hits; no second pass for a clear.
+    case hitOnly
     case none
 }
 
@@ -93,6 +97,10 @@ struct LabCase {
     var follower: LabPiece? = nil
     /// Let the real game-over happen, tap to retry, then jump once.
     var crashThenRetry = false
+    /// A whole generated course instead of one staged obstacle: the spawner
+    /// seeded with this, played by the lab's bot up to `courseScore`.
+    var courseSeed: UInt64? = nil
+    var courseScore = 50
 }
 
 // MARK: - Measurements
@@ -324,6 +332,9 @@ final class HitboxLab {
     // MARK: Frame clock
 
     /// Called from `GameScene.didFinishUpdate`, after physics, every frame.
+    /// Off while a course is played, so the real spawner can run.
+    var holdSpawner = true
+
     func tick() {
         frameCount += 1
         // SwiftUI may set the view's frame rate again on any update, so it is
@@ -340,7 +351,7 @@ final class HitboxLab {
         }
         lastTick = now
         skipPacing = false
-        scene?.labHoldWorld()
+        if holdSpawner { scene?.labHoldWorld() }
         if !started, frameCount > 30 {
             started = true
             Task { @MainActor in await self.runAll() }
@@ -425,7 +436,7 @@ final class HitboxLab {
 
         if mode == "sweep" || mode == "all" { await runSweeps() }
         if mode == "cases" || mode == "all" {
-            let cases = HitboxLab.catalogue().filter { only == nil || $0.id.hasPrefix(only!) }
+            let cases = HitboxLab.catalogue().filter { selected($0.id) }
             for (i, c) in cases.enumerated() {
                 status("case \(i + 1)/\(cases.count) \(c.id)")
                 await runCase(c)
@@ -468,6 +479,12 @@ final class HitboxLab {
         try? (names.joined(separator: "\n") + "\n").data(using: .utf8)?.write(to: out.appendingPathComponent("files.txt"))
     }
 
+    /// Whether -LabOnly (a comma-separated list of ID prefixes) includes this.
+    func selected(_ id: String) -> Bool {
+        guard let only else { return true }
+        return only.split(separator: ",").contains { id.hasPrefix($0.trimmingCharacters(in: .whitespaces)) }
+    }
+
     // MARK: Cases
 
     func distance(_ c: LabCase) -> CGFloat {
@@ -482,6 +499,10 @@ final class HitboxLab {
     @MainActor
     func runCase(_ c: LabCase) async {
         guard let scene else { return }
+        if let seed = c.courseSeed {
+            await runCourse(c, seed: seed)
+            return
+        }
         // A boundary the sweep found no such thing for (no phantom zone at this
         // size, say) is recorded as not applicable rather than run at a guess.
         if !plan.isEmpty {
@@ -535,7 +556,7 @@ final class HitboxLab {
             } else {
                 notes.append("no landing seen")
             }
-        case .none:
+        case .none, .hitOnly:
             break
         }
         for (frame, label) in stops {
@@ -557,6 +578,116 @@ final class HitboxLab {
             minSepPose: first.minSepPose, landingFrame: first.landingFrame, apexes: first.apexes,
             groundEvents: first.groundEvents, shots: shots, notes: notes,
             trace: keepTrace ? first.samples : nil
+        ), to: "results.jsonl")
+    }
+
+    // MARK: Courses
+
+    /// Plays a whole generated course: the real spawner, seeded so the same
+    /// course comes up every time, answered by a simple bot. The bot answers
+    /// each obstacle at the middle of its window, in seconds rather than points
+    /// so it holds at every speed — the sweeps put every jump prop's centre at
+    /// 0.46–0.48 s out, a slide's at about 0.54 s, and a cliff is crossed at
+    /// half a jump. A jump waits for any bench Benny is still under, since
+    /// standing up beneath it is the crash the slide was avoiding.
+    ///
+    /// A hit or a fall here means the spawner served something the bot couldn't
+    /// clear at the middle of its window — an impossible combination, or one so
+    /// tight it needs better timing than the window's centre. The notes say what.
+    @MainActor
+    func runCourse(_ c: LabCase, seed: UInt64) async {
+        guard let scene else { return }
+        let dogX = GameScene.Layout.dogX
+        intercepting = true
+        pendingHit = false
+        holdSpawner = true
+        scene.labRestart()
+        scene.labSeedSpawner(seed)
+        var grounded = 0
+        while grounded < frames(10) {
+            await nextFrame()
+            grounded = scene.labGrounded ? grounded + 1 : 0
+        }
+        holdSpawner = false
+        defer {
+            holdSpawner = true
+            scene.labSeedSpawner(nil)
+        }
+
+        let jumpLead: CGFloat = 0.47, slideLead: CGFloat = 0.54
+        let cliffLead = scene.labAirtime / 2
+        var acted = Set<ObjectIdentifier>()
+        var counts: [String: Int] = [:]
+        var failures: [String] = []
+        var notes: [String] = []
+        var shots: [String] = []
+        var topSpeed: CGFloat = 0
+        var frame = 0
+        let limit = frames(60 * 240)
+
+        func describe(_ node: SKNode) -> String {
+            if node === scene.labActiveCliff { return "cliff" }
+            return (node.userData?["labPiece"] as? String) ?? "?"
+        }
+
+        while frame < limit, scene.score < c.courseScore {
+            await nextFrame()
+            frame += 1
+            let speed = scene.labSpeed
+            topSpeed = max(topSpeed, speed)
+            let obstacles = scene.labObstacles
+
+            if scene.labGameOver {
+                failures.append("fell or crashed at score \(scene.score), \(Int(speed)) pt/s")
+                break
+            }
+            if pendingHit {
+                pendingHit = false
+                let nearest = obstacles.min { abs($0.position.x - dogX) < abs($1.position.x - dogX) }
+                failures.append("hit \(nearest.map(describe) ?? "?") at score \(scene.score), \(Int(speed)) pt/s, pose \(scene.labPose)")
+                if shots.count < 12, let box = scene.labProbeBox() {
+                    let sample = LabSample(frame: frame, pose: scene.labPose,
+                                           paw: Double(scene.labPawY - GameScene.Layout.dogGroundLine),
+                                           box: nil, sep: nil, grounded: scene.labGrounded, obstacleX: nil)
+                    shots += await capture(name: "\(c.id)_hit\(failures.count)", sample: sample, box: box, shapes: [],
+                                           text: "\(c.id) · \(build.uppercased()) · \(failures.last ?? "")")
+                }
+            }
+
+            // The nearest obstacle not yet answered.
+            guard let next = obstacles.first(where: { !acted.contains(ObjectIdentifier($0)) && $0.position.x > dogX - 40 }) else { continue }
+            let isCliff = next === scene.labActiveCliff
+            let verb = isCliff ? "cliff" : ((next.userData?["labVerb"] as? String) ?? "jump")
+            let lead = verb == "duck" ? slideLead : (isCliff ? cliffLead : jumpLead)
+            let rel = next.position.x - dogX
+            guard rel <= speed * lead else { continue }
+            if verb != "duck" {
+                let underBench = obstacles.contains { o in
+                    o !== next && (o.userData?["labVerb"] as? String) == "duck"
+                        && o.position.x < next.position.x
+                        && o.position.x + ((o.userData?["labWidth"] as? CGFloat) ?? 0) / 2 > dogX - 34
+                }
+                if underBench && rel > speed * 0.30 { continue }
+            }
+            let ready = scene.labGrounded && (verb != "duck" || !scene.labSliding)
+            if !ready {
+                if rel > speed * 0.30 { continue }
+                notes.append("no ground time to answer \(describe(next)) at score \(scene.score)")
+            }
+            acted.insert(ObjectIdentifier(next))
+            counts[describe(next), default: 0] += 1
+            if verb == "duck" { scene.labSlide() } else { scene.labJump() }
+        }
+
+        let met = counts.values.reduce(0, +)
+        let mix = counts.sorted { $0.key < $1.key }.map { "\($0.value) \($0.key)" }.joined(separator: ", ")
+        notes.insert("met \(met) obstacles to score \(scene.score), up to \(Int(topSpeed)) pt/s: \(mix)", at: 0)
+        if failures.isEmpty, scene.score < c.courseScore { notes.append("stopped at the time limit") }
+        let outcome = failures.isEmpty ? "CLEAR" : "HIT"
+        append(LabCaseRecord(
+            id: c.id, build: build, piece: "course", speed: Double(topSpeed), height: nil, d: Double(seed),
+            outcome: outcome, runs: [outcome], hitFrame: nil, hitPose: nil, minSep: nil, minSepPose: nil,
+            landingFrame: nil, apexes: [], groundEvents: [], shots: shots, notes: notes + failures, trace: nil
         ), to: "results.jsonl")
     }
 
@@ -598,7 +729,7 @@ final class HitboxLab {
     @MainActor
     func runSweeps() async {
         guard let scene else { return }
-        let targets = HitboxLab.sweepTargets().filter { only == nil || $0.id.hasPrefix(only!) || "S-\($0.id)".hasPrefix(only!) }
+        let targets = HitboxLab.sweepTargets().filter { selected($0.id) || selected("S-\($0.id)") }
         for (i, t) in targets.enumerated() {
             status("sweep \(i + 1)/\(targets.count) \(t.id)")
             var c = LabCase(id: "S-\(t.id)")
@@ -742,6 +873,12 @@ final class HitboxLab {
                     }
                 case let .whenCleared(index, action):
                     if cleared.contains(index) { fired.insert(i); apply(action) }
+                case let .hitch(f, ms) where frames(f) == frame:
+                    fired.insert(i)
+                    // Block the main thread, as a slow frame on a real phone
+                    // would: the next update arrives late, all at once.
+                    Thread.sleep(forTimeInterval: Double(ms) / 1000)
+                    skipPacing = true
                 default:
                     break
                 }
@@ -965,7 +1102,7 @@ final class HitboxLab {
 extension LabFreeze: Equatable {
     static func == (a: LabFreeze, b: LabFreeze) -> Bool {
         switch (a, b) {
-        case (.outcome, .outcome), (.top, .top), (.none, .none): true
+        case (.outcome, .outcome), (.top, .top), (.none, .none), (.hitOnly, .hitOnly): true
         default: false
         }
     }
@@ -1148,14 +1285,69 @@ extension HitboxLab {
             cases.append(c)
         }
 
-        var pair = LabCase(id: "L-9-PAIR")
-        pair.piece = .bench
-        pair.follower = .log
-        pair.target = "bench/slide"
-        pair.d = .plan("centre", 161.4)
-        pair.inputs = [.at(0, .slide), .whenCleared(0, .jump)]
-        pair.maxFrames = 300
-        cases.append(pair)
+        var pairCase = LabCase(id: "L-9-PAIR")
+        pairCase.piece = .bench
+        pairCase.follower = .log
+        pairCase.target = "bench/slide"
+        pairCase.d = .plan("centre", 161.4)
+        pairCase.inputs = [.at(0, .slide), .whenCleared(0, .jump)]
+        pairCase.maxFrames = 300
+        cases.append(pairCase)
+
+        // T — the window edges at every speed tier, from the sweeps (winLo and
+        // winHi in plan.json). IN is one frame of travel inside an edge and must
+        // clear, or the window has shrunk; OUT is one frame outside and should
+        // hit; EDGE is the edge itself, recorded but only ever warned about.
+        for t in sweepTargets() where !(t.action == .jump && t.tier == nil) {
+            let travel = t.speed / 60
+            let name = t.id.replacingOccurrences(of: "/", with: "-")
+            for (edge, key, sign) in [("LO", "winLo", CGFloat(1)), ("HI", "winHi", CGFloat(-1))] {
+                for (suffix, offset) in [("EDGE", CGFloat(0)), ("IN", sign * travel), ("OUT", -sign * travel)] {
+                    var c = LabCase(id: "T-\(name)-\(edge)-\(suffix)")
+                    c.piece = t.piece
+                    c.speed = t.speed
+                    c.tier = t.tier
+                    c.target = t.id
+                    c.d = offset == 0 ? .plan(key, 0) : .planOffset(key, 0, offset)
+                    c.inputs = [.at(0, t.action)]
+                    c.freeze = .hitOnly
+                    c.repeats = 2
+                    c.maxFrames = 220
+                    cases.append(c)
+                }
+            }
+        }
+
+        // H — the same jumps and slides with a hitch: the main thread stalled
+        // 50 or 100 ms at points through the move. A hitch must never turn a
+        // clear into a hit; check.py compares each with the case it copies.
+        let hitchBases = ["J-LOG-TOP", "J-LOG-LC-M", "J-LOG-RC-M", "J-STUMP-TOP", "J-STUMP-LC-M", "J-STUMP-RC-M",
+                          "J-BUSH-TOP", "J-BUSH-LC-M", "J-BUSH-RC-M",
+                          "D-BENCH-2-SL-OK", "D-BENCH-3-SL-LATE-M", "D-BENCH-5-SL-EARLY-M"]
+        for id in hitchBases {
+            guard let base = cases.first(where: { $0.id == id }) else { continue }
+            let at = id.hasPrefix("J-") ? [3, 12, 27, 42, 50] : [3, 20, 40, 60]
+            for f in at {
+                for ms in [50, 100] {
+                    var c = base
+                    c.id = "H-\(id)@f\(f)+\(ms)ms"
+                    c.inputs = base.inputs + [.hitch(f, ms)]
+                    c.freeze = .hitOnly
+                    c.repeats = 1
+                    cases.append(c)
+                }
+            }
+        }
+
+        // C — whole generated courses, to score 50 (past top speed), each from
+        // a fixed seed so a failure can be replayed exactly.
+        for seed: UInt64 in [1, 2, 3] {
+            var c = LabCase(id: "C-SEED-\(seed)")
+            c.courseSeed = seed
+            c.courseScore = 50
+            c.repeats = 1
+            cases.append(c)
+        }
 
         return cases
     }
