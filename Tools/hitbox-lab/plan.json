@@ -1,0 +1,186 @@
+{
+ "bench/hurdle": {},
+ "bench/slide": {
+  "centre": 134.0,
+  "d": 134.0,
+  "earlyHit": 208.5,
+  "earlyHitAfter": 208.5,
+  "earlyMiss": 207.75,
+  "earlyMissBoth": 207.75,
+  "lateHit": 59.5,
+  "lateMiss": 60.25
+ },
+ "bush@250": {
+  "centre": 117.25,
+  "d": 117.25,
+  "earlyHit": 138.5,
+  "earlyHitAfter": 138.5,
+  "earlyMiss": 135.5,
+  "earlyMissBoth": 135.5,
+  "lateHit": 95.75,
+  "lateMiss": 99.0,
+  "latePhantom": 97.38,
+  "phantom": 137.0
+ },
+ "bush@290": {
+  "centre": 135.38,
+  "d": 135.38,
+  "earlyHit": 159.75,
+  "earlyHitAfter": 159.75,
+  "earlyMiss": 156.25,
+  "earlyMissBoth": 156.25,
+  "lateHit": 112.0,
+  "lateMiss": 114.5,
+  "latePhantom": 113.25,
+  "phantom": 158.0
+ },
+ "bush@335": {
+  "centre": 156.12,
+  "d": 156.12,
+  "earlyHit": 183.5,
+  "earlyHitAfter": 183.5,
+  "earlyMiss": 179.25,
+  "earlyMissBoth": 179.25,
+  "lateHit": 132.25,
+  "lateMiss": 133.0,
+  "phantom": 181.38
+ },
+ "hedge@250": {
+  "centre": 118.38,
+  "d": 118.38,
+  "earlyHit": 139.25,
+  "earlyHitAfter": 139.25,
+  "earlyMiss": 138.5,
+  "earlyMissBoth": 138.5,
+  "lateHit": 97.5,
+  "lateMiss": 98.25
+ },
+ "hedge@290": {
+  "centre": 136.88,
+  "d": 136.88,
+  "earlyHit": 161.0,
+  "earlyHitAfter": 161.0,
+  "earlyMiss": 160.25,
+  "earlyMissBoth": 160.25,
+  "lateHit": 112.75,
+  "lateMiss": 113.5
+ },
+ "hedge@335": {
+  "centre": 155.12,
+  "d": 155.12,
+  "earlyHit": 186.25,
+  "earlyHitAfter": 186.25,
+  "earlyMiss": 179.75,
+  "earlyMissBoth": 179.75,
+  "lateHit": 129.75,
+  "lateMiss": 130.5,
+  "phantom": 183.0
+ },
+ "log@250": {
+  "centre": 118.25,
+  "d": 118.25,
+  "earlyHit": 139.25,
+  "earlyHitAfter": 139.25,
+  "earlyMiss": 138.5,
+  "earlyMissBoth": 138.5,
+  "lateHit": 93.0,
+  "lateMiss": 98.0,
+  "latePhantom": 95.5
+ },
+ "log@290": {
+  "centre": 136.62,
+  "d": 136.62,
+  "earlyHit": 159.5,
+  "earlyHitAfter": 159.5,
+  "earlyMiss": 158.75,
+  "earlyMissBoth": 158.75,
+  "lateHit": 109.0,
+  "lateMiss": 114.5,
+  "latePhantom": 111.75
+ },
+ "log@335": {
+  "centre": 157.62,
+  "d": 157.62,
+  "earlyHit": 188.5,
+  "earlyHitAfter": 188.5,
+  "earlyMiss": 182.0,
+  "earlyMissBoth": 182.0,
+  "lateHit": 132.5,
+  "lateMiss": 133.25,
+  "phantom": 185.25
+ },
+ "logStack@250": {
+  "centre": 117.62,
+  "d": 117.62,
+  "earlyHit": 141.63,
+  "earlyHitAfter": 141.63,
+  "earlyMiss": 136.75,
+  "earlyMissBoth": 136.75,
+  "lateHit": 97.75,
+  "lateMiss": 98.5,
+  "phantom": 139.19
+ },
+ "logStack@290": {
+  "centre": 135.88,
+  "d": 135.88,
+  "earlyHit": 158.75,
+  "earlyHitAfter": 158.75,
+  "earlyMiss": 158.0,
+  "earlyMissBoth": 158.0,
+  "lateHit": 113.0,
+  "lateMiss": 113.75
+ },
+ "logStack@335": {
+  "centre": 156.75,
+  "d": 156.75,
+  "earlyHit": 183.25,
+  "earlyHitAfter": 183.25,
+  "earlyMiss": 182.5,
+  "earlyMissBoth": 182.5,
+  "lateHit": 130.25,
+  "lateMiss": 131.0
+ },
+ "stump@250": {
+  "centre": 118.32,
+  "d": 118.32,
+  "earlyHit": 139.63,
+  "earlyHitAfter": 139.63,
+  "earlyMiss": 138.88,
+  "earlyMissBoth": 138.88,
+  "lateHit": 97.0,
+  "lateMiss": 97.75
+ },
+ "stump@290": {
+  "centre": 134.25,
+  "d": 134.25,
+  "earlyHit": 162.0,
+  "earlyHitAfter": 162.0,
+  "earlyMiss": 156.5,
+  "earlyMissBoth": 156.5,
+  "lateHit": 111.25,
+  "lateMiss": 112.0,
+  "phantom": 159.25
+ },
+ "stump@335": {
+  "centre": 157.62,
+  "d": 157.62,
+  "earlyHit": 182.25,
+  "earlyHitAfter": 182.25,
+  "earlyMiss": 181.5,
+  "earlyMissBoth": 181.5,
+  "lateHit": 127.5,
+  "lateMiss": 133.75,
+  "latePhantom": 130.62
+ },
+ "swingset/hurdle": {},
+ "swingset/slide": {
+  "centre": 139.12,
+  "d": 139.12,
+  "earlyHit": 218.75,
+  "earlyHitAfter": 218.75,
+  "earlyMiss": 218.0,
+  "earlyMissBoth": 218.0,
+  "lateHit": 59.5,
+  "lateMiss": 60.25
+ }
+}

@@ -227,6 +227,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // Input is handled by `touchesBegan` rather than a gesture recognizer
         // hung on the view — the scene owns it, so it can't outlive the scene
         // or stack up if the scene is presented more than once.
+        #if DEBUG
+        labWillBuild(in: view)
+        #endif
         build()
     }
 
@@ -850,7 +853,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             if slack(middle) > ObstacleArt.clearance { low = middle } else { high = middle }
         }
 
+        #if DEBUG
+        let jitter = HitboxLab.isActive
+            ? 0 : CGFloat.random(in: -ObstacleArt.heightJitter...ObstacleArt.heightJitter)
+        #else
         let jitter = CGFloat.random(in: -ObstacleArt.heightJitter...ObstacleArt.heightJitter)
+        #endif
         return min(high, max(piece.heightRange.lowerBound, low * (1 + jitter)))
     }
 
@@ -1708,6 +1716,13 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     // MARK: - Update loop
 
+    #if DEBUG
+    /// The Hitbox Lab's frame clock — see `HitboxLab`. After physics, before render.
+    override func didFinishUpdate() {
+        HitboxLab.shared?.tick()
+    }
+    #endif
+
     override func update(_ currentTime: TimeInterval) {
         guard !isGameOver else { return }
 
@@ -2515,6 +2530,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Contacts
 
     func didBegin(_ contact: SKPhysicsContact) {
+        #if DEBUG
+        if let lab = HitboxLab.shared, lab.observe(contact, began: true) { return }
+        #endif
         let categories = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if categories == (PhysicsCategory.dog | PhysicsCategory.ground) {
@@ -2559,6 +2577,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     func didEnd(_ contact: SKPhysicsContact) {
+        #if DEBUG
+        _ = HitboxLab.shared?.observe(contact, began: false)
+        #endif
         let categories = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
         guard categories == (PhysicsCategory.dog | PhysicsCategory.ground) else { return }
 
@@ -2787,3 +2808,124 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         build()
     }
 }
+
+// MARK: - Hitbox Lab hooks (DEBUG only)
+
+#if DEBUG
+/// The narrow surface `HitboxLab` drives the game through. Lives in this file
+/// because it needs the scene's private state; everything else is in
+/// `HitboxLab.swift`. Nothing here reads the hitbox's own parameters, so it
+/// behaves the same on every branch.
+extension GameScene {
+    func labWillBuild(in view: SKView) {
+        if HitboxLab.showPhysics { view.showsPhysics = true }
+        guard HitboxLab.configure(scene: self) != nil else { return }
+        // Straight into a run: no title clip, nothing spawning on its own.
+        hasStarted = true
+        view.preferredFramesPerSecond = 60
+    }
+
+    /// Every frame: hold the speed the lab set and keep the spawner idle.
+    func labHoldWorld() {
+        obstacleTimer = 0
+    }
+
+    var labSpeed: CGFloat {
+        get { gameSpeed }
+        set { gameSpeed = newValue }
+    }
+
+    var labGrounded: Bool { isOnGround }
+    var labSliding: Bool { isSliding }
+    var labGameOver: Bool { isGameOver }
+    var labPawY: CGFloat { dog.position.y - Layout.dogSize.height / 2 }
+
+    func labRestart() { restart() }
+    func labTapToRetry() { restart() }
+    func labJump() { jump() }
+    func labSlide() { slide() }
+
+    func labHeight(_ piece: ObstacleArt.Piece, tier: CGFloat) -> CGFloat {
+        obstacleHeight(piece, at: tier)
+    }
+
+    /// Stands an obstacle up exactly as `spawn` does, centred at `centreX`.
+    @discardableResult
+    func labPlace(_ piece: ObstacleArt.Piece, height: CGFloat, centreX: CGFloat) -> SKNode {
+        let node = makeObstacle(piece, height: height)
+        node.position = CGPoint(x: centreX, y: Layout.groundTop)
+        node.zPosition = 8
+        node.name = "obstacle"
+        addChild(node)
+        return node
+    }
+
+    /// A cliff exactly as `spawnObstacle` makes one, centred at `centreX`.
+    func labPlaceCliff(centreX: CGFloat) -> CGFloat {
+        let gap = cliffGapWidth(at: gameSpeed)
+        let cliff = makeCliff(gap: gap)
+        cliff.position = CGPoint(x: centreX, y: Layout.groundTop)
+        cliff.zPosition = 8
+        cliff.name = "obstacle"
+        addChild(cliff)
+        activeCliff = cliff
+        activeCliffGap = gap
+        return gap
+    }
+
+    /// The game's own spacing for a duck-then-jump pair.
+    func labPairSeparation(lead: ObstacleArt.Piece, leadHeight: CGFloat,
+                           follower: ObstacleArt.Piece, followerHeight: CGFloat) -> CGFloat {
+        let first = Spawned(node: SKNode(), width: lead.size(height: leadHeight).width, clearHeight: 0)
+        let second = Spawned(
+            node: SKNode(), width: follower.size(height: followerHeight).width,
+            clearHeight: followerHeight * follower.solid.topPerHeight - (follower.sink - Layout.dogPlantDepth)
+        )
+        return pairSeparation(from: first, to: second)
+    }
+
+    /// Which drawing Benny is wearing: run_N, jump_N or slide_N.
+    var labPose: String {
+        guard let sprite = dog.childNode(withName: "body") as? SKSpriteNode,
+              let texture = sprite.texture else { return "?" }
+        if let i = DogArt.jumpFrames.firstIndex(where: { $0 === texture }) { return "jump_\(i)" }
+        if let i = DogArt.slideFrames.firstIndex(where: { $0 === texture }) { return "slide_\(i)" }
+        if let i = DogArt.frames.firstIndex(where: { $0 === texture }) { return "run_\(i)" }
+        return "?"
+    }
+
+    /// Benny's physics box as the physics world actually has it, found by
+    /// probing points rather than by reading how the box was built.
+    func labProbeBox() -> CGRect? {
+        guard let body = dog.physicsBody else { return nil }
+        let x = dog.position.x + 1
+        let paw = labPawY
+        func inside(_ point: CGPoint) -> Bool {
+            var found = false
+            physicsWorld.enumerateBodies(at: point) { candidate, stop in
+                if candidate === body {
+                    found = true
+                    stop.pointee = true
+                }
+            }
+            return found
+        }
+        let seeds: [CGFloat] = [20, 10, 30, 5, 45]
+        guard let seed = seeds.map({ paw + $0 }).first(where: { inside(CGPoint(x: x, y: $0)) }) else { return nil }
+        /// From a point inside to one outside, down to a thousandth of a point.
+        func edge(_ inner: CGFloat, _ outer: CGFloat, _ at: (CGFloat) -> CGPoint) -> CGFloat {
+            var a = inner, b = outer
+            for _ in 0..<24 {
+                let m = (a + b) / 2
+                if inside(at(m)) { a = m } else { b = m }
+            }
+            return (a + b) / 2
+        }
+        let floor = edge(seed, paw - 40) { CGPoint(x: x, y: $0) }
+        let top = edge(seed, paw + 160) { CGPoint(x: x, y: $0) }
+        let back = edge(x, x - 160) { CGPoint(x: $0, y: seed) }
+        let front = edge(x, x + 160) { CGPoint(x: $0, y: seed) }
+        return CGRect(x: back, y: floor, width: front - back, height: top - floor)
+    }
+}
+#endif
