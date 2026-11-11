@@ -246,7 +246,7 @@ def pacing(c, results, lenient=False):
     # Below 90% of the asked-for rate the run is not testing what it says it is.
     if lenient:
         if got < 0.9 * want:
-            c.warn(f'ran at {got:.1f} of {want} fps; frame counts are still exact, but timing-sensitive cases may differ')
+            c.warn(f'ran at {got:.1f} of {want} fps; hits near a window edge may land a frame or two off')
     else:
         c.ok(got >= 0.9 * want, f'ran at {want} fps', f'measured {got:.1f} fps')
     if dropped / frames > 0.01:

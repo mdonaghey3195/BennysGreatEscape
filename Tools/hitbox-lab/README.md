@@ -92,7 +92,7 @@ python3 Tools/hitbox-lab/gate.py --update-baseline   # accept a deliberate chang
 python3 Tools/hitbox-lab/test_hitbox_tools.py        # the tools' own tests
 ```
 
-**The simulator run** is on trial: label a pull request `run-simulator` to run it. Hosted Macs are shared and virtualised, so `--ci` doesn't fail on a low frame rate (frame counts stay exact; only hitches and pacing notice) and re-runs any failed case once on its own; one that passes the second time is reported as flaky on CI. Results, screenshots and logs are attached to the run as the `hitbox-lab` artifact.
+**The simulator run** is on trial: label a pull request `run-simulator` to run it. Hosted Macs are shared and virtualised, so `--ci` doesn't fail on a low frame rate (the first trial ran at 34 fps, which moved one hit by two frames) and re-runs any failed case once on its own; one that passes the second time is reported as flaky on CI. Results, screenshots and logs are attached to the run as the `hitbox-lab` artifact.
 
 ## Changing the hitbox on purpose
 
