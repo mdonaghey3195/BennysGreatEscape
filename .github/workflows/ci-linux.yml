@@ -1,0 +1,38 @@
+# The hitbox gate: everything about the hitboxes that can be checked without a
+# Mac. Reads the collision numbers straight from the Swift source, works out the
+# timing each obstacle gives, and fails on any change until
+# Tools/hitbox-lab/hitbox-baseline.json is updated to match. About a minute.
+name: Hitbox gate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Hitbox gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test the hitbox tools
+        run: python3 Tools/hitbox-lab/test_hitbox_tools.py
+
+      - name: Check the hitbox numbers
+        run: python3 Tools/hitbox-lab/gate.py --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Lint validate.sh
+        run: shellcheck Tools/hitbox-lab/validate.sh
+
+      - name: Check the lab's data files parse
+        run: |
+          python3 -m py_compile Tools/hitbox-lab/*.py
+          python3 -c "import plistlib, sys; plistlib.load(open(sys.argv[1], 'rb'))" Tools/hitbox-lab/Debug-Info.plist

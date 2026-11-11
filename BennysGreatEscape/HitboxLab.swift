@@ -11,6 +11,10 @@
 //    -HitboxLab cases|sweep|all   run the lab instead of the game
 //    -LabBuild before|after       label for the output folder and HUD
 //    -LabOnly <prefix>            only cases / sweep targets with this prefix
+//                                 (comma-separated for several)
+//    -LabFPS 60|120               frame rate to ask for (Debug builds only)
+//    -LabSeeds 1,2,3              course seeds for the C cases (default 1,2,3)
+//    -LabScore 50                 score each course is played to (default 50)
 //    -LabOut <path>               output folder (default: the host's
 //                                 ~/Development/BGE-lab-results/<build>)
 //    -ShowPhysics                 draw SpriteKit's physics outlines
@@ -1340,11 +1344,16 @@ extension HitboxLab {
         }
 
         // C — whole generated courses, to score 50 (past top speed), each from
-        // a fixed seed so a failure can be replayed exactly.
-        for seed: UInt64 in [1, 2, 3] {
+        // a fixed seed so a failure can be replayed exactly. -LabSeeds swaps in
+        // other seeds (the nightly run's, or one a failure named) and
+        // -LabScore plays them further.
+        let seeds = (HitboxLab.argument("-LabSeeds") ?? "1,2,3")
+            .split(separator: ",").compactMap { UInt64($0.trimmingCharacters(in: .whitespaces)) }
+        let score = Int(HitboxLab.argument("-LabScore") ?? "") ?? 50
+        for seed in seeds {
             var c = LabCase(id: "C-SEED-\(seed)")
             c.courseSeed = seed
-            c.courseScore = 50
+            c.courseScore = score
             c.repeats = 1
             cases.append(c)
         }
