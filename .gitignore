@@ -19,3 +19,6 @@ DerivedData/
 .build/
 Packages/
 Package.resolved
+
+## Python
+__pycache__/

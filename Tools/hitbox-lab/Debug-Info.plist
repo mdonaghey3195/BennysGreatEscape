@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	Debug builds only, merged into the generated Info.plist. Lets the Hitbox
+	Lab ask a ProMotion iPhone for 120 Hz (validate.sh with fps 120). It is not
+	an INFOPLIST_KEY_ build setting Xcode recognises, so it has to come from a
+	file. Normal play is unaffected: SpriteView still asks for 60.
+	-->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+</dict>
+</plist>
