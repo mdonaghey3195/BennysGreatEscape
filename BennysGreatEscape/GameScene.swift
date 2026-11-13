@@ -180,6 +180,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var isOnGround = false
 
     private var obstacleTimer: TimeInterval = 0
+
+    /// Every roll the spawner makes — see `SpawnDice`.
+    private var dice = SpawnDice()
     private var obstacleInterval: TimeInterval = 1.8
     private var lastUpdateTime: TimeInterval = 0
     private var gameSpeed: CGFloat = Layout.openingSpeed
@@ -227,6 +230,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // Input is handled by `touchesBegan` rather than a gesture recognizer
         // hung on the view — the scene owns it, so it can't outlive the scene
         // or stack up if the scene is presented more than once.
+        #if DEBUG
+        labWillBuild(in: view)
+        #endif
         build()
     }
 
@@ -850,7 +856,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             if slack(middle) > ObstacleArt.clearance { low = middle } else { high = middle }
         }
 
-        let jitter = CGFloat.random(in: -ObstacleArt.heightJitter...ObstacleArt.heightJitter)
+        #if DEBUG
+        let jitter = HitboxLab.isActive
+            ? 0 : CGFloat.random(in: -ObstacleArt.heightJitter...ObstacleArt.heightJitter, using: &dice)
+        #else
+        let jitter = CGFloat.random(in: -ObstacleArt.heightJitter...ObstacleArt.heightJitter, using: &dice)
+        #endif
         return min(high, max(piece.heightRange.lowerBound, low * (1 + jitter)))
     }
 
@@ -950,6 +961,29 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// pairing them needs to name which is which.
     private enum Verb { case jump, duck }
 
+    /// The spawner's dice: every roll that decides what comes next and how big
+    /// it is. The system's own randomness, exactly as before, unless a seed is
+    /// set — which only the Hitbox Lab does, so that a course can be replayed
+    /// obstacle for obstacle. (Cosmetic rolls, like where dust lands, don't
+    /// use it: they can't change what the player has to do.)
+    struct SpawnDice: RandomNumberGenerator {
+        private var state: UInt64?
+        private var system = SystemRandomNumberGenerator()
+
+        init(seed: UInt64? = nil) { state = seed }
+
+        mutating func next() -> UInt64 {
+            guard var s = state else { return system.next() }
+            // SplitMix64: small, fast, and the same sequence on every device.
+            s &+= 0x9E37_79B9_7F4A_7C15
+            state = s
+            var z = s
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            return z ^ (z >> 31)
+        }
+    }
+
     /// What an obstacle came out as, which is what pairing has to reason about:
     /// two of them must not overlap, and the second must be answerable once the
     /// first has gone by.
@@ -980,7 +1014,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             // drawn, because the bench half of it now has to know *which* bench:
             // the second one of a run has a pair of dogs sitting on it. Only the
             // second. A surprise that turns up every time is scenery.
-            if score >= 6 && Bool.random() {
+            if score >= 6 && Bool.random(using: &dice) {
                 piece = ObstacleArt.swingset
             } else {
                 benchesSpawned += 1
@@ -1002,7 +1036,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
                 onFirstLowObstacle?()
             }
         case .jump:
-            piece = ObstacleArt.jumps.randomElement() ?? ObstacleArt.log
+            piece = ObstacleArt.jumps.randomElement(using: &dice) ?? ObstacleArt.log
             // Sized for the tier the world has reached rather than for the
             // speed it is actually doing — see `ObstacleArt.sizeTiers` for why
             // it is quantised, and quantised downwards.
@@ -1013,6 +1047,15 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         node.position = CGPoint(x: x, y: Layout.groundTop)
         node.zPosition = 8
         node.name = "obstacle"
+        #if DEBUG
+        // What the Hitbox Lab's course bot needs to know to answer it.
+        node.userData = NSMutableDictionary(dictionary: [
+            "labVerb": verb == .duck ? "duck" : "jump",
+            "labPiece": Self.labName(of: piece),
+            "labHeight": height,
+            "labWidth": piece.size(height: height).width,
+        ])
+        #endif
         addChild(node)
         return Spawned(
             node: node,
@@ -1077,7 +1120,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // scrolled off, and `lastCliffScore` keeps them from clustering.
         let wantsCliff = activeCliff == nil
             && (Cliff.debugSpawnAlways
-                || (score - lastCliffScore >= Cliff.scoreCooldown && Int.random(in: 0..<10) < 1))
+                || (score - lastCliffScore >= Cliff.scoreCooldown && Int.random(in: 0..<10, using: &dice) < 1))
         if wantsCliff {
             let gap = cliffGapWidth(at: gameSpeed)
             let spawnX = cliffSpawnX()
@@ -1099,7 +1142,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // mostly ducking loses the rhythm of jumping. They also hold off until a
         // few obstacles in, so the first thing anyone meets is a jump.
         func rollVerb() -> Verb {
-            score >= 2 && DogArt.slideFrames.count > 1 && Int.random(in: 0..<10) < 3 ? .duck : .jump
+            score >= 2 && DogArt.slideFrames.count > 1 && Int.random(in: 0..<10, using: &dice) < 3 ? .duck : .jump
         }
 
         let first = rollVerb()
@@ -1120,7 +1163,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // which is the moment worth having.
         let wantsPair = score >= ObstacleArt.pairFromScore
             && DogArt.slideFrames.count > 1
-            && Int.random(in: 0..<10) < ObstacleArt.pairInTen
+            && Int.random(in: 0..<10, using: &dice) < ObstacleArt.pairInTen
         if wantsPair {
             let lead = spawn(.duck, at: Layout.spawnX)
             // Stood up alongside it and then moved back, because how far back
@@ -1707,6 +1750,13 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     // MARK: - Update loop
+
+    #if DEBUG
+    /// The Hitbox Lab's frame clock — see `HitboxLab`. After physics, before render.
+    override func didFinishUpdate() {
+        HitboxLab.shared?.tick()
+    }
+    #endif
 
     override func update(_ currentTime: TimeInterval) {
         guard !isGameOver else { return }
@@ -2523,6 +2573,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Contacts
 
     func didBegin(_ contact: SKPhysicsContact) {
+        #if DEBUG
+        if let lab = HitboxLab.shared, lab.observe(contact, began: true) { return }
+        #endif
         let categories = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if categories == (PhysicsCategory.dog | PhysicsCategory.ground) {
@@ -2567,6 +2620,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     func didEnd(_ contact: SKPhysicsContact) {
+        #if DEBUG
+        _ = HitboxLab.shared?.observe(contact, began: false)
+        #endif
         let categories = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
         guard categories == (PhysicsCategory.dog | PhysicsCategory.ground) else { return }
 
@@ -2795,3 +2851,145 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         build()
     }
 }
+
+// MARK: - Hitbox Lab hooks (DEBUG only)
+
+#if DEBUG
+/// The narrow surface `HitboxLab` drives the game through. Lives in this file
+/// because it needs the scene's private state; everything else is in
+/// `HitboxLab.swift`. Nothing here reads the hitbox's own parameters, so it
+/// behaves the same on every branch.
+extension GameScene {
+    func labWillBuild(in view: SKView) {
+        if HitboxLab.showPhysics { view.showsPhysics = true }
+        guard HitboxLab.configure(scene: self) != nil else { return }
+        // Straight into a run: no title clip, nothing spawning on its own.
+        hasStarted = true
+        view.preferredFramesPerSecond = HitboxLab.shared?.fps ?? 60
+    }
+
+    /// Every frame: hold the speed the lab set and keep the spawner idle.
+    func labHoldWorld() {
+        obstacleTimer = 0
+    }
+
+    var labSpeed: CGFloat {
+        get { gameSpeed }
+        set { gameSpeed = newValue }
+    }
+
+    var labGrounded: Bool { isOnGround }
+    var labSliding: Bool { isSliding }
+    var labGameOver: Bool { isGameOver }
+    var labPawY: CGFloat { dog.position.y - Layout.dogSize.height / 2 }
+
+    func labRestart() { restart() }
+
+    /// Replays the same course every time (nil: back to real randomness).
+    func labSeedSpawner(_ seed: UInt64?) { dice = SpawnDice(seed: seed) }
+
+    /// The obstacles on screen or coming, nearest first.
+    var labObstacles: [SKNode] {
+        children.filter { $0.name == "obstacle" }.sorted { $0.position.x < $1.position.x }
+    }
+    var labActiveCliff: SKNode? { activeCliff }
+    var labAirtime: CGFloat { airtime }
+
+    static func labName(of piece: ObstacleArt.Piece) -> String {
+        let named: [(String, ObstacleArt.Piece)] = [
+            ("log", ObstacleArt.log), ("logStack", ObstacleArt.logStack), ("hedge", ObstacleArt.hedge),
+            ("stump", ObstacleArt.stump), ("bush", ObstacleArt.bush), ("bench", ObstacleArt.bench),
+            ("occupiedBench", ObstacleArt.occupiedBench), ("swingset", ObstacleArt.swingset),
+        ]
+        // The occupied bench is the bench drawing plus its two dogs.
+        if piece.texture === ObstacleArt.bench.texture && piece.hasOverlayArt { return "occupiedBench" }
+        return named.first { $0.1.texture === piece.texture }?.0 ?? "?"
+    }
+    func labTapToRetry() { restart() }
+    func labJump() { jump() }
+    func labSlide() { slide() }
+
+    func labHeight(_ piece: ObstacleArt.Piece, tier: CGFloat) -> CGFloat {
+        obstacleHeight(piece, at: tier)
+    }
+
+    /// Stands an obstacle up exactly as `spawn` does, centred at `centreX`.
+    @discardableResult
+    func labPlace(_ piece: ObstacleArt.Piece, height: CGFloat, centreX: CGFloat) -> SKNode {
+        let node = makeObstacle(piece, height: height)
+        node.position = CGPoint(x: centreX, y: Layout.groundTop)
+        node.zPosition = 8
+        node.name = "obstacle"
+        addChild(node)
+        return node
+    }
+
+    /// A cliff exactly as `spawnObstacle` makes one, centred at `centreX`.
+    func labPlaceCliff(centreX: CGFloat) -> CGFloat {
+        let gap = cliffGapWidth(at: gameSpeed)
+        let cliff = makeCliff(gap: gap)
+        cliff.position = CGPoint(x: centreX, y: Layout.groundTop)
+        cliff.zPosition = 8
+        cliff.name = "obstacle"
+        addChild(cliff)
+        activeCliff = cliff
+        activeCliffGap = gap
+        return gap
+    }
+
+    /// The game's own spacing for a duck-then-jump pair.
+    func labPairSeparation(lead: ObstacleArt.Piece, leadHeight: CGFloat,
+                           follower: ObstacleArt.Piece, followerHeight: CGFloat) -> CGFloat {
+        let first = Spawned(node: SKNode(), width: lead.size(height: leadHeight).width, clearHeight: 0)
+        let second = Spawned(
+            node: SKNode(), width: follower.size(height: followerHeight).width,
+            clearHeight: followerHeight * follower.solid.topPerHeight - (follower.sink - Layout.dogPlantDepth)
+        )
+        return pairSeparation(from: first, to: second)
+    }
+
+    /// Which drawing Benny is wearing: run_N, jump_N or slide_N.
+    var labPose: String {
+        guard let sprite = dog.childNode(withName: "body") as? SKSpriteNode,
+              let texture = sprite.texture else { return "?" }
+        if let i = DogArt.jumpFrames.firstIndex(where: { $0 === texture }) { return "jump_\(i)" }
+        if let i = DogArt.slideFrames.firstIndex(where: { $0 === texture }) { return "slide_\(i)" }
+        if let i = DogArt.frames.firstIndex(where: { $0 === texture }) { return "run_\(i)" }
+        return "?"
+    }
+
+    /// Benny's physics box as the physics world actually has it, found by
+    /// probing points rather than by reading how the box was built.
+    func labProbeBox() -> CGRect? {
+        guard let body = dog.physicsBody else { return nil }
+        let x = dog.position.x + 1
+        let paw = labPawY
+        func inside(_ point: CGPoint) -> Bool {
+            var found = false
+            physicsWorld.enumerateBodies(at: point) { candidate, stop in
+                if candidate === body {
+                    found = true
+                    stop.pointee = true
+                }
+            }
+            return found
+        }
+        let seeds: [CGFloat] = [20, 10, 30, 5, 45]
+        guard let seed = seeds.map({ paw + $0 }).first(where: { inside(CGPoint(x: x, y: $0)) }) else { return nil }
+        /// From a point inside to one outside, down to a thousandth of a point.
+        func edge(_ inner: CGFloat, _ outer: CGFloat, _ at: (CGFloat) -> CGPoint) -> CGFloat {
+            var a = inner, b = outer
+            for _ in 0..<24 {
+                let m = (a + b) / 2
+                if inside(at(m)) { a = m } else { b = m }
+            }
+            return (a + b) / 2
+        }
+        let floor = edge(seed, paw - 40) { CGPoint(x: x, y: $0) }
+        let top = edge(seed, paw + 160) { CGPoint(x: x, y: $0) }
+        let back = edge(x, x - 160) { CGPoint(x: $0, y: seed) }
+        let front = edge(x, x + 160) { CGPoint(x: $0, y: seed) }
+        return CGRect(x: back, y: floor, width: front - back, height: top - floor)
+    }
+}
+#endif
