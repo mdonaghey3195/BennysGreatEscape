@@ -505,6 +505,17 @@ private func physicsBox(_ asset: String) -> (width: String, height: String, offs
 print("  physics boxes:")
 private let body = physicsBox("benny_run")
 private let duck = physicsBox("benny_slide")
+// The jump's hitbox follows its pose, so each frame's own ground contact has to
+// be known in code — see `DogArt.jumpLifts`. Printed from the same paw lines the
+// registration already measured, so these cannot drift from the frames shipped.
+print("\n    static let jumpLifts: [CGFloat] = [")
+for (i, row) in (landed["benny_jump"] ?? []).enumerated() {
+    let lift = Double(pawRow - row) / Double(canvas.height)
+    let pts = Double(pawRow - row) * 100.0 / Double(canvas.width)
+    print(String(format: "        %.3f,   // jump_%d  %.1fpt above the paw line", lift, i, pts))
+}
+print("    ]")
+
 print("""
 
 paste into DogArt:

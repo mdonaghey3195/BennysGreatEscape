@@ -99,6 +99,43 @@ extension GameScene {
         static let bodyHeightFraction: CGFloat = 0.797
         static let bodyOffsetXFraction: CGFloat = 0.054
 
+        /// How far each jump pose's own lowest drawn point sits above the paw
+        /// line, as a fraction of the canvas height.
+        ///
+        /// The physics box's floor is the paw line, which is right while he is
+        /// standing on it and wrong the moment he isn't. At the apex Benny tucks
+        /// his legs right up under himself — `jump_5` draws nothing in the bottom
+        /// 15.3pt of his own frame — so a box anchored to the paw line hangs that
+        /// far below the dog, and an obstacle he has visibly cleared still ends
+        /// the run. Against obstacles 47–100pt tall that phantom slab is 15–32%
+        /// of their height, and it bites hardest on frames 4 and 5, which
+        /// `jumpArc` holds longest because that is where the flight spends its
+        /// time.
+        ///
+        /// So each pose lifts the box's floor to its own. The top does not move:
+        /// only the empty part is given back.
+        ///
+        /// Measured, not guessed — `Art/CutDogFrames.swift` prints these from the
+        /// same paw-line pass that registers the frames, so a redrawn sheet
+        /// reprints them.
+        static let jumpLifts: [CGFloat] = [
+            0.077,   // jump_0  crouch        5.5pt
+            0.000,   // jump_1  launch        0.0pt
+            0.032,   // jump_2  rising        2.3pt
+            0.078,   // jump_3  rising        5.6pt
+            0.186,   // jump_4  apex         13.3pt
+            0.213,   // jump_5  apex         15.2pt
+            0.100,   // jump_6  descending    7.1pt
+            0.046,   // jump_7  reaching      3.3pt
+            0.072,   // jump_8  landing       5.2pt
+            0.067,   // jump_9  settling      4.8pt
+        ]
+
+        /// The lift for a pose, or none for an index the sheet doesn't have.
+        static func jumpLift(_ index: Int) -> CGFloat {
+            index >= 0 && index < jumpLifts.count ? jumpLifts[index] : 0
+        }
+
         /// How far the leading edge is pulled back, as a fraction of the canvas.
         ///
         /// Forgiveness, and named as such rather than folded into the fractions
