@@ -10,6 +10,8 @@
 #   Tools/hitbox-lab/validate.sh --on-device           # the first connected iPhone
 #   Tools/hitbox-lab/validate.sh --on-device "Matt's iPhone" --fps 120
 #   Tools/hitbox-lab/validate.sh --record              # accept this run as the expected results
+#   Tools/hitbox-lab/validate.sh --only C- --seeds 7,42 --score 100   # replay courses
+#   Tools/hitbox-lab/validate.sh --quick --ci          # as GitHub Actions runs it
 #
 # Exits 0 when every check passes, 1 when a check fails, 2 when the run itself
 # could not happen (build failed, no simulator or phone, timed out).
@@ -26,6 +28,10 @@
 # --fps 120 asks for ProMotion's 120 Hz (Debug builds only; the game itself runs
 # at 60). There is no expected file for it yet, so it checks the invariants only
 # unless --expected names one; --record with it writes expected-120hz.json.
+#
+# --ci is for shared, virtualised Macs: a slow frame rate warns instead of
+# failing, and cases that fail are run once more on their own; any that pass
+# the second time are reported as flaky on CI rather than failed.
 
 set -euo pipefail
 
@@ -38,8 +44,11 @@ RECORD=0
 SHOTS=0
 EXPECTED=""
 TIMEOUT=3600
+CI_MODE=0
+SEEDS=""
+SCORE=""
 
-usage() { sed -n '3,29p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '3,35p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -55,6 +64,9 @@ while [[ $# -gt 0 ]]; do
         --expected)  EXPECTED="$2"; shift 2 ;;
         --screenshots) SHOTS=1; shift ;;
         --timeout)   TIMEOUT="$2"; shift 2 ;;
+        --ci)        CI_MODE=1; shift ;;
+        --seeds)     SEEDS="$2"; shift 2 ;;
+        --score)     SCORE="$2"; shift 2 ;;
         -h|--help)   usage 0 ;;
         *) echo "Unknown option: $1" >&2; usage 2 ;;
     esac
@@ -80,8 +92,9 @@ mkdir -p "$OUT"
 # same points the expected results were recorded at.
 cp "$HERE/plan.json" "$RUN_DIR/plan.json"
 
-LAB_ARGS=(-HitboxLab cases -LabBuild validate -LabFPS "$FPS")
-if [[ -n "$ONLY" ]]; then LAB_ARGS+=(-LabOnly "$ONLY"); fi
+LAB_ARGS=(-HitboxLab cases -LabFPS "$FPS")
+if [[ -n "$SEEDS" ]]; then LAB_ARGS+=(-LabSeeds "$SEEDS"); fi
+if [[ -n "$SCORE" ]]; then LAB_ARGS+=(-LabScore "$SCORE"); fi
 
 # --- Where it runs ----------------------------------------------------------
 
@@ -163,80 +176,130 @@ else
     xcrun simctl install "$UDID" "$APP"
 fi
 
-# A file on the phone, read back into the run folder. Fails quietly if the
-# file isn't there yet.
-fetch() {
+# A file on the phone, read back into a folder of the run. Fails quietly if
+# the file isn't there yet.
+fetch() {  # LABEL FILE
     xcrun devicectl device copy from --device "$DEVICE" \
         --domain-type appDataContainer --domain-identifier "$BUNDLE" \
-        --source "Documents/HitboxLab/validate/$1" --destination "$OUT/$1" >/dev/null 2>&1
+        --source "Documents/HitboxLab/$1/$2" --destination "$RUN_DIR/$1/$2" >/dev/null 2>&1
+}
+
+# Run the lab once: LABEL names the results folder (build/hitbox-lab/<ts>/LABEL),
+# ONLY is the -LabOnly list (empty for everything).
+run_lab() {  # LABEL ONLY
+    local label="$1" only="$2" args=("${LAB_ARGS[@]}" -LabBuild "$1") dir="$RUN_DIR/$1"
+    if [[ -n "$only" ]]; then args+=(-LabOnly "$only"); fi
+    mkdir -p "$dir"
+    if (( ON_DEVICE )); then
+        # The phone can't read plan.json from this Mac, so it travels in the
+        # environment instead. The "--" keeps devicectl from reading the lab's
+        # arguments as its own options (it took -HitboxLab for -t, its timeout).
+        local env_json
+        env_json="$(python3 -c 'import json,sys; print(json.dumps({"LAB_PLAN": open(sys.argv[1]).read()}))' "$HERE/plan.json")"
+        xcrun devicectl device process launch --device "$DEVICE" --terminate-existing \
+            --environment-variables "$env_json" -- "$BUNDLE" "${args[@]}" > "$RUN_DIR/launch-$label.log" 2>&1 \
+            || { cat "$RUN_DIR/launch-$label.log"; die "launch failed (is the phone unlocked?)"; }
+        POLL=15
+    else
+        xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE" "${args[@]}" -LabOut "$RUN_DIR" >/dev/null
+        POLL=5
+    fi
+
+    local start=$SECONDS status
+    while :; do
+        if (( ON_DEVICE )); then
+            fetch "$label" STATUS.txt || true
+            if fetch "$label" DONE; then break; fi
+        elif [[ -f "$dir/DONE" ]]; then
+            break
+        fi
+        if (( SECONDS - start > TIMEOUT )); then
+            die "timed out after ${TIMEOUT}s; last status: $(cat "$dir/STATUS.txt" 2>/dev/null || echo none)"
+        fi
+        status="$(cut -d' ' -f4- "$dir/STATUS.txt" 2>/dev/null || echo starting)"
+        if [[ -t 1 ]]; then
+            printf '\r  %4ds  %-60s' $((SECONDS - start)) "$status"
+        elif (( (SECONDS - start) % 60 < POLL )); then
+            # Not a terminal (CI): a line a minute rather than a carriage-return spinner.
+            printf '  %4ds  %s\n' $((SECONDS - start)) "$status"
+        fi
+        sleep "$POLL"
+    done
+    printf '\r  %4ds  %-60s\n' $((SECONDS - start)) "done"
+
+    if (( ON_DEVICE )); then
+        step "Fetching the results from the phone"
+        fetch "$label" results.jsonl || die "could not copy results.jsonl off the phone"
+        fetch "$label" device.json || true
+        if (( SHOTS )) && fetch "$label" files.txt; then
+            local count=0 f
+            while read -r f; do
+                [[ -n "$f" ]] && fetch "$label" "$f" && count=$((count + 1))
+            done < "$dir/files.txt"
+            echo "  $count screenshots"
+        else
+            echo "  (screenshots left on the phone; add --screenshots to copy them)"
+        fi
+        xcrun devicectl device process terminate --device "$DEVICE" --bundle-identifier "$BUNDLE" >/dev/null 2>&1 || true
+    else
+        xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
+    fi
 }
 
 step "Running the Hitbox Lab at $FPS fps"
-if (( ON_DEVICE )); then
-    # The phone can't read plan.json from this Mac, so it travels in the
-    # environment instead. The "--" keeps devicectl from reading the lab's
-    # arguments as its own options (it took -HitboxLab for -t, its timeout).
-    ENV_JSON="$(python3 -c 'import json,sys; print(json.dumps({"LAB_PLAN": open(sys.argv[1]).read()}))' "$HERE/plan.json")"
-    xcrun devicectl device process launch --device "$DEVICE" --terminate-existing \
-        --environment-variables "$ENV_JSON" -- "$BUNDLE" "${LAB_ARGS[@]}" > "$RUN_DIR/launch.log" 2>&1 \
-        || { cat "$RUN_DIR/launch.log"; die "launch failed (is the phone unlocked?)"; }
-    POLL=15
-else
-    xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE" "${LAB_ARGS[@]}" -LabOut "$RUN_DIR" >/dev/null
-    POLL=5
-fi
-
-START=$SECONDS
-while :; do
-    if (( ON_DEVICE )); then
-        fetch STATUS.txt || true
-        if fetch DONE; then break; fi
-    elif [[ -f "$OUT/DONE" ]]; then
-        break
-    fi
-    if (( SECONDS - START > TIMEOUT )); then
-        die "timed out after ${TIMEOUT}s; last status: $(cat "$OUT/STATUS.txt" 2>/dev/null || echo none)"
-    fi
-    STATUS="$(cut -d' ' -f4- "$OUT/STATUS.txt" 2>/dev/null || echo starting)"
-    printf '\r  %4ds  %-60s' $((SECONDS - START)) "$STATUS"
-    sleep "$POLL"
-done
-printf '\r  %4ds  %-60s\n' $((SECONDS - START)) "done"
-
-if (( ON_DEVICE )); then
-    step "Fetching the results from the phone"
-    fetch results.jsonl || die "could not copy results.jsonl off the phone"
-    fetch device.json || true
-    if (( SHOTS )) && fetch files.txt; then
-        COUNT=0
-        while read -r f; do
-            [[ -n "$f" ]] && fetch "$f" && COUNT=$((COUNT + 1))
-        done < "$OUT/files.txt"
-        echo "  $COUNT screenshots"
-    else
-        echo "  (screenshots left on the phone; add --screenshots to copy them)"
-    fi
-    xcrun devicectl device process terminate --device "$DEVICE" --bundle-identifier "$BUNDLE" >/dev/null 2>&1 || true
-else
-    xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
-fi
+run_lab validate "$ONLY"
 
 # --- Check -----------------------------------------------------------------
 
 step "Checking"
-CHECK=(python3 "$HERE/check.py" "$OUT" --expected "$EXPECTED")
+CHECK=(python3 "$HERE/check.py" --expected "$EXPECTED")
 if (( RECORD )); then
     CHECK+=(--record)
 else
-    [[ -n "$ONLY" ]] && CHECK+=(--partial)
+    [[ -n "$ONLY" || -n "$SEEDS" ]] && CHECK+=(--partial)
     if [[ ! -f "$EXPECTED" ]]; then
         echo "  no $(basename "$EXPECTED") yet; checking invariants only (--record to create it)"
         CHECK+=(--invariants-only)
     fi
+    (( CI_MODE )) && CHECK+=(--lenient-pacing)
 fi
 set +e
-"${CHECK[@]}"
+"${CHECK[@]}" "$OUT" --failed-cases "$RUN_DIR/failed.txt"
 RESULT=$?
 set -e
+
+# On CI, give each failed case one more run on its own before believing it.
+if (( CI_MODE && RESULT == 1 && ! RECORD )) && [[ -s "$RUN_DIR/failed.txt" ]]; then
+    RERUN="$(paste -sd, "$RUN_DIR/failed.txt")"
+    step "Re-running $(wc -l < "$RUN_DIR/failed.txt" | tr -d ' ') failed case(s) once: $RERUN"
+    run_lab rerun "$RERUN"
+    # The re-run's results replace the first run's for those cases.
+    MERGED="$RUN_DIR/merged"
+    mkdir -p "$MERGED"
+    python3 - "$OUT/results.jsonl" "$RUN_DIR/rerun/results.jsonl" "$MERGED/results.jsonl" <<'PY'
+import json, sys
+first, again, out = sys.argv[1:4]
+cases = {}
+for path in (first, again):
+    with open(path) as fh:
+        for line in fh:
+            if line.strip():
+                r = json.loads(line)
+                cases[r['id']] = r
+with open(out, 'w') as fh:
+    for r in cases.values():
+        fh.write(json.dumps(r) + '\n')
+PY
+    cp "$OUT/device.json" "$MERGED/" 2>/dev/null || true
+    : > "$RUN_DIR/failed-again.txt"
+    "${CHECK[@]}" "$MERGED" --failed-cases "$RUN_DIR/failed-again.txt" >/dev/null 2>&1 || true
+    FLAKY="$(comm -23 <(sort "$RUN_DIR/failed.txt") <(sort "$RUN_DIR/failed-again.txt") | paste -sd, -)"
+    step "Checking with the re-run"
+    set +e
+    "${CHECK[@]}" "$MERGED" --flaky-ok "$FLAKY"
+    RESULT=$?
+    set -e
+    OUT="$MERGED"
+fi
 echo "Results: $OUT"
 exit $RESULT

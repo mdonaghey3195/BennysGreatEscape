@@ -1,0 +1,385 @@
+{
+ "source": {
+  "constants": {
+   "Cliff.clearance": 0.21,
+   "Cliff.maxGapWidth": 170.0,
+   "DogArt.bodyHeightFraction": 0.797,
+   "DogArt.bodyOffsetXFraction": 0.054,
+   "DogArt.bodyWidthFraction": 0.786,
+   "DogArt.forgivenessFraction": 0.08,
+   "DogArt.jumpLifts": [
+    0.077,
+    0.0,
+    0.032,
+    0.078,
+    0.186,
+    0.213,
+    0.1,
+    0.046,
+    0.072,
+    0.067
+   ],
+   "DogArt.slideHeightFraction": 0.391,
+   "DogArt.slideOffsetXFraction": -0.028,
+   "DogArt.slideWidthFraction": 0.77,
+   "Layout.dogPlantDepth": 5.6,
+   "Layout.dogWidth": 100.0,
+   "Layout.dogX": 100.0,
+   "Layout.duckClearance": 41.6,
+   "Layout.jumpHeight": 144.0,
+   "Layout.obstacleSink": 9.6,
+   "Layout.openingSpeed": 250.4396,
+   "Layout.slideDistance": 320.0,
+   "Layout.speedScale": 0.8944,
+   "Layout.topSpeed": 393.548,
+   "Layout.worldScale": 0.8,
+   "ObstacleArt.benchHeight": 82.5911,
+   "ObstacleArt.benchSink": 4.8,
+   "ObstacleArt.benchUnderseat": 0.494,
+   "ObstacleArt.clearance": 0.15,
+   "ObstacleArt.heightJitter": 0.04,
+   "ObstacleArt.pairRecovery": 0.28,
+   "ObstacleArt.sizeTiers": [
+    250.4396,
+    290.0,
+    335.0
+   ],
+   "ObstacleArt.swingsetHeight": 103.8168,
+   "ObstacleArt.swingsetSink": 4.8,
+   "ObstacleArt.swingsetUnderbar": 0.393
+  },
+  "dogAspect": 1.4036,
+  "gravity": 1350.0,
+  "jumpFrames": 10,
+  "jumpWeights": [
+   0.06,
+   0.08,
+   0.09,
+   0.09,
+   0.15,
+   0.15,
+   0.1,
+   0.1,
+   0.09,
+   0.09
+  ],
+  "pieces": {
+   "bench": {
+    "aspect": 2.0602,
+    "heightRange": [
+     82.5911,
+     82.5911
+    ],
+    "image": "obstacle_bench",
+    "offsetXFraction": 0.0,
+    "shape": "box",
+    "sink": 4.8,
+    "solid": {
+     "base": 0.494,
+     "height": 0.506,
+     "width": 0.979
+    }
+   },
+   "bush": {
+    "aspect": 1.7946,
+    "heightRange": [
+     64.8,
+     100.0
+    ],
+    "image": "obstacle_bush",
+    "offsetXFraction": 0.0,
+    "shape": "disc",
+    "sink": 9.6,
+    "solid": {
+     "centre": 0.102,
+     "radius": 0.808
+    }
+   },
+   "hedge": {
+    "aspect": 1.2905,
+    "heightRange": [
+     58.4,
+     84.8
+    ],
+    "image": "obstacle_hedge",
+    "offsetXFraction": -0.002,
+    "shape": "box",
+    "sink": 9.6,
+    "solid": {
+     "base": 0.0,
+     "height": 0.908,
+     "width": 0.947
+    }
+   },
+   "log": {
+    "aspect": 1.9493,
+    "heightRange": [
+     47.2,
+     72.8
+    ],
+    "image": "obstacle_log",
+    "offsetXFraction": 0.0,
+    "shape": "box",
+    "sink": 9.6,
+    "solid": {
+     "base": 0.0,
+     "height": 0.758,
+     "width": 0.95
+    }
+   },
+   "logStack": {
+    "aspect": 1.4263,
+    "heightRange": [
+     56.0,
+     81.6
+    ],
+    "image": "obstacle_log_stack",
+    "offsetXFraction": 0.009,
+    "shape": "box",
+    "sink": 9.6,
+    "solid": {
+     "base": 0.0,
+     "height": 0.911,
+     "width": 0.918
+    }
+   },
+   "occupiedBench": {
+    "aspect": 2.0602,
+    "heightRange": [
+     82.5911,
+     82.5911
+    ],
+    "image": "obstacle_bench",
+    "offsetXFraction": 0.0,
+    "shape": "box",
+    "sink": 4.8,
+    "solid": {
+     "base": 0.494,
+     "height": 0.506,
+     "width": 0.979
+    }
+   },
+   "stump": {
+    "aspect": 0.9938,
+    "heightRange": [
+     65.6,
+     92.8
+    ],
+    "image": "obstacle_stump",
+    "offsetXFraction": 0.0,
+    "shape": "box",
+    "sink": 9.6,
+    "solid": {
+     "base": 0.0,
+     "height": 0.947,
+     "width": 0.95
+    }
+   },
+   "swingset": {
+    "aspect": 2.247,
+    "heightRange": [
+     103.8168,
+     103.8168
+    ],
+    "image": "obstacle_swingset_frame",
+    "offsetXFraction": -0.002,
+    "shape": "box",
+    "sink": 4.8,
+    "solid": {
+     "base": 0.393,
+     "height": 0.607,
+     "width": 0.629
+    }
+   }
+  },
+  "spawnInterval": {
+   "floor": 1.3,
+   "speedStep": 4.0,
+   "start": 1.8,
+   "step": 0.02
+  }
+ },
+ "timing": {
+  "airtime": 0.9238,
+  "cliffs": {
+   "gapThere": 170.0,
+   "tightestSlackMs": 245.0
+  },
+  "duckedTop": 27.86,
+  "jumps": {
+   "bush@250": {
+    "clampedHigh": false,
+    "clampedLow": true,
+    "height": 64.8,
+    "hi": 141.65,
+    "lo": 93.57,
+    "ms": 192.0,
+    "solverSlackMs": 148.0
+   },
+   "bush@290": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 78.68,
+    "hi": 163.56,
+    "lo": 109.63,
+    "ms": 186.0,
+    "solverSlackMs": 150.0
+   },
+   "bush@335": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 92.93,
+    "hi": 188.33,
+    "lo": 127.01,
+    "ms": 183.0,
+    "solverSlackMs": 150.0
+   },
+   "hedge@250": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 58.56,
+    "hi": 142.39,
+    "lo": 94.44,
+    "ms": 191.4,
+    "solverSlackMs": 150.0
+   },
+   "hedge@290": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 68.92,
+    "hi": 164.44,
+    "lo": 109.77,
+    "ms": 188.5,
+    "solverSlackMs": 150.0
+   },
+   "hedge@335": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 78.93,
+    "hi": 189.18,
+    "lo": 127.13,
+    "ms": 185.2,
+    "solverSlackMs": 150.0
+   },
+   "log@250": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 47.46,
+    "hi": 142.09,
+    "lo": 91.82,
+    "ms": 200.7,
+    "solverSlackMs": 150.0
+   },
+   "log@290": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 57.33,
+    "hi": 163.68,
+    "lo": 109.59,
+    "ms": 186.5,
+    "solverSlackMs": 150.0
+   },
+   "log@335": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 67.47,
+    "hi": 188.42,
+    "lo": 126.84,
+    "ms": 183.8,
+    "solverSlackMs": 150.0
+   },
+   "logStack@250": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 56.17,
+    "hi": 141.46,
+    "lo": 93.44,
+    "ms": 191.7,
+    "solverSlackMs": 150.0
+   },
+   "logStack@290": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 66.31,
+    "hi": 163.36,
+    "lo": 108.6,
+    "ms": 188.8,
+    "solverSlackMs": 150.0
+   },
+   "logStack@335": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 76.19,
+    "hi": 187.95,
+    "lo": 125.86,
+    "ms": 185.3,
+    "solverSlackMs": 150.0
+   },
+   "stump@250": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 65.89,
+    "hi": 142.56,
+    "lo": 94.16,
+    "ms": 193.2,
+    "solverSlackMs": 150.0
+   },
+   "stump@290": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 76.37,
+    "hi": 164.34,
+    "lo": 109.6,
+    "ms": 188.8,
+    "solverSlackMs": 150.0
+   },
+   "stump@335": {
+    "clampedHigh": false,
+    "clampedLow": false,
+    "height": 86.14,
+    "hi": 189.24,
+    "lo": 125.21,
+    "ms": 191.1,
+    "solverSlackMs": 150.0
+   }
+  },
+  "launch": 623.54,
+  "slides": {
+   "bench:underside": 41.6,
+   "bench@250": {
+    "hi": 202.81,
+    "lo": 119.99,
+    "ms": 330.7
+   },
+   "bench@394": {
+    "hi": 202.81,
+    "lo": 119.99,
+    "ms": 210.4
+   },
+   "occupiedBench:underside": 41.6,
+   "occupiedBench@250": {
+    "hi": 202.81,
+    "lo": 119.99,
+    "ms": 330.7
+   },
+   "occupiedBench@394": {
+    "hi": 202.81,
+    "lo": 119.99,
+    "ms": 210.4
+   },
+   "swingset:underside": 41.6,
+   "swingset@250": {
+    "hi": 213.2,
+    "lo": 110.53,
+    "ms": 409.9
+   },
+   "swingset@394": {
+    "hi": 213.2,
+    "lo": 110.53,
+    "ms": 260.9
+   }
+  },
+  "spawnFloorVsAirtimeMs": 376.2,
+  "standingTop": 56.78
+ }
+}

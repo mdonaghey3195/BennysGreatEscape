@@ -1,0 +1,105 @@
+# The Hitbox Lab in an iOS simulator on a GitHub-hosted Mac: the 104 core cases
+# (J, D, L) against expected.json, plus a Release build.
+#
+# On trial: runs only when a pull request carries the `run-simulator` label, or
+# by hand from the Actions tab once this file is on master. Shared, virtualised
+# Macs drop frames, so it runs with --ci: a slow frame rate warns rather than
+# fails, and a failed case gets one re-run before it counts. After the trial
+# this will run on every pull request into master and feature/**.
+name: Hitbox lab (simulator)
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: Case ID prefixes to run, comma-separated
+        default: J-,D-,L-
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODE: /Applications/Xcode_26.6.app
+  SIMULATOR: iPhone 17 Pro Max
+
+jobs:
+  lab:
+    name: Hitbox lab
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-simulator')
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          sw_vers
+          sysctl -n machdep.cpu.brand_string hw.ncpu
+
+      - name: Make sure the ${{ env.SIMULATOR }} simulator exists
+        run: |
+          if ! xcrun simctl list devices available | grep -q "$SIMULATOR ("; then
+            echo "No $SIMULATOR; fetching the iOS platform"
+            xcodebuild -downloadPlatform iOS
+            xcrun simctl create "$SIMULATOR" "$SIMULATOR"
+          fi
+          xcrun simctl list devices available | grep "$SIMULATOR ("
+
+      - name: Run the lab
+        shell: bash
+        env:
+          ONLY: ${{ github.event.inputs.only || 'J-,D-,L-' }}
+        run: |
+          Tools/hitbox-lab/validate.sh --only "$ONLY" --ci --timeout 2100 2>&1 | tee lab.log
+
+      - name: Build Release
+        if: success() || failure()
+        run: |
+          xcodebuild \
+            -project BennysGreatEscape.xcodeproj \
+            -scheme BennysGreatEscape \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/release \
+            CODE_SIGNING_ALLOWED=NO \
+            build > release.log 2>&1 || { tail -60 release.log; exit 1; }
+          echo "Release build succeeded"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Hitbox lab (simulator)"
+            echo
+            if [[ -f lab.log ]]; then
+              echo '```'
+              grep -E '^(  (info|warn|FAIL)|HITBOX|==> Re-running|  simulator)' lab.log | head -150 || true
+              echo '```'
+            else
+              echo "The lab did not run."
+            fi
+            echo
+            echo "Screenshots, results and logs are in the \`hitbox-lab\` artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hitbox-lab
+          path: |
+            build/hitbox-lab/
+            !build/hitbox-lab/DerivedData/
+            lab.log
+            release.log
+          retention-days: 14
+          if-no-files-found: ignore

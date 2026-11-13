@@ -60,4 +60,10 @@ Each `FAIL` line names a case and what went wrong. `warn` lines are worth a look
 2. Open the screenshots for the cases that changed.
 3. If the new behaviour is right, run it again with `--record` and commit the updated `Tools/hitbox-lab/expected.json` with your change.
 
+Then run `python3 Tools/hitbox-lab/gate.py --update-baseline` and commit `Tools/hitbox-lab/hitbox-baseline.json` as well.
+
+### In CI
+
+Every push and pull request runs the **Hitbox gate** on GitHub's Linux runners. It reads the hitbox numbers from the Swift source, checks the timing every obstacle gives, and fails on any change until `hitbox-baseline.json` is updated. To also run the simulator cases on a hosted Mac, add the `run-simulator` label to the pull request.
+
 [Tools/hitbox-lab/README.md](Tools/hitbox-lab/README.md) has the details: every check, how the course bot plays, and how to re-derive the test distances from fresh sweeps.
