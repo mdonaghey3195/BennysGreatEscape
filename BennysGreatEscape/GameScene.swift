@@ -1834,6 +1834,14 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             data["scored"] = true
             node.userData = data
 
+            // The run ends at the trigger, not a step past it. Arming the
+            // launch doesn't clear the turf: whatever was already in flight
+            // when the score tipped over still runs past Benny before the dog
+            // house arrives (`holdBackDogHouse` waits for exactly that), and
+            // without this each one added a point — so every finished run read
+            // 101, or 102 after a pair. Still marked scored above so nothing
+            // is counted later.
+            guard self.score < Launch.trigger else { return }
             self.score += 1
             self.onScoreChange?(self.score)
         }
