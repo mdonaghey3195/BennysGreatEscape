@@ -657,6 +657,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// of its own. That is the whole of what made a slide hand out free jumps
     /// for the rest of a run.
     private func setDucked(_ ducked: Bool) {
+        noteGroundedSwap()
         dogBodyLift = 0
         dog.physicsBody = makeDogPhysics(ducked: ducked)
     }
@@ -674,10 +675,25 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// function and not two lines at each call site.
     private func wearDogBody(lift: CGFloat) {
         let carried = dog.physicsBody?.velocity ?? .zero
+        noteGroundedSwap()
         let fresh = makeDogPhysics(ducked: false, lift: lift)
         dog.physicsBody = fresh
         fresh.velocity = carried
         dogBodyLift = lift
+    }
+
+    /// When a body was last swapped in while Benny stood on the turf, in
+    /// `update`'s clock, or -1 for none pending. The ground contact the swap
+    /// re-announces is recognised by it in `didBegin`.
+    private var groundedSwapAt: TimeInterval = -1
+
+    /// How long a swap's re-announced contact is waited for. A few frames: it
+    /// arrives on the next physics step, and if it somehow never does, this
+    /// keeps the next real landing from being mistaken for it.
+    private static let reannounceWindow: TimeInterval = 0.1
+
+    private func noteGroundedSwap() {
+        if isOnGround { groundedSwapAt = lastUpdateTime }
     }
 
     /// Matches the hitbox to the jump pose being drawn.
@@ -1707,6 +1723,13 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // contact callback re-enters that callback.
         if isOnGround, dogBodyLift != 0, !isSliding {
             wearDogBody(lift: 0)
+            // He came down on the lifted floor, so the drawing landed that far
+            // into the turf, and the full box now overlaps the ground by the
+            // same amount. Left there, the physics pops him out of it — a
+            // visible bounce — and a jump taken on this frame starts from the
+            // sunk height and peaks that much lower. Stand him back on the turf.
+            let standing = Layout.dogGroundLine + Layout.dogSize.height / 2
+            if dog.position.y < standing { dog.position.y = standing }
         }
 
         // Everything below this line belongs to the world `beginPhaseTwo` takes
@@ -2503,7 +2526,17 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let categories = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
 
         if categories == (PhysicsCategory.dog | PhysicsCategory.ground) {
+            // A body swapped in while he stood on the turf announces the same
+            // ground all over again. That is not a landing, and treating it as
+            // one is what wiped a jump started on the frame he touched down:
+            // the lifted jump box comes off in `update`, the fresh body reports
+            // this contact a frame later, and the gallop below replaced the jump
+            // arc mid-flight — no jump poses, and so none of their lifts either.
+            // The same thing happened jumping straight out of a slide.
+            let reannounced = groundedSwapAt >= 0 && lastUpdateTime - groundedSwapAt < Self.reannounceWindow
+            groundedSwapAt = -1
             isOnGround = true
+            if reannounced { return }
             // Not while sliding. Swapping in the ducked body makes the ground
             // report a fresh contact, and landing back into a gallop here would
             // wipe the slide a frame or two after it started — which is exactly
@@ -2719,6 +2752,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         worldScroll = 1
         score = 0
         dogBodyLift = 0        // the body is rebuilt below; the tally must agree
+        groundedSwapAt = -1
         isGameOver = false
         isSliding = false
         hasLeftGround = false
