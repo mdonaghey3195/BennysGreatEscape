@@ -11,7 +11,7 @@ masked by the material either side of the loop point, so it doesn't tick — but
 it isn't the perfect zero-crossing match the previous 6.5s loop had, and it's
 the first thing to look at if a click ever appears.
 
-`../BennysGreatEscape/benny_theme.m4a` is what ships: the same audio at 128kbps
+`../BennysGreatEscape/Audio/shared/music/benny_theme.m4a` is what ships: the same audio at 128kbps
 AAC, 385KB. The source peaks at -0.1 dBFS, which is hot enough to be worth
 checking after any re-encode — this one decodes to -0.08 dBFS with zero clipped
 samples, but a louder master could clip on the way through AAC.
@@ -20,7 +20,7 @@ samples, but a louder master could clip on the way through AAC.
 
 Export from GarageBand, then:
 
-    afconvert -f m4af -d aac -b 128000 -s 3 new.wav ../BennysGreatEscape/benny_theme.m4a
+    afconvert -f m4af -d aac -b 128000 -s 3 new.wav ../BennysGreatEscape/Audio/shared/music/benny_theme.m4a
 
 No code changes needed — `Music.swift` looks the file up by that name. Two things
 to keep true of any replacement:

@@ -37,7 +37,7 @@ import ImageIO
 
 // MARK: - Tuning
 
-private let artwork = "BennysGreatEscape/Assets.xcassets/title_art.imageset/title_art.png"
+private let artwork = "BennysGreatEscape/Assets.xcassets/title_page/title_art.imageset/title_art.png"
 
 /// Buttons are in the lower part of the picture. Everything above is sky,
 /// foliage, the logo and the dog — and the logo is painted on the same timber

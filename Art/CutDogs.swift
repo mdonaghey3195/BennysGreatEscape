@@ -233,7 +233,7 @@ private func write(_ bitmap: Bitmap, to path: String) {
 }
 
 private func install(_ bitmap: Bitmap, named name: String) {
-    let directory = "BennysGreatEscape/Assets.xcassets/\(name).imageset"
+    let directory = "BennysGreatEscape/Assets.xcassets/phase_one/gameplay/obstacles/bench/\(name).imageset"
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
     write(bitmap, to: "\(directory)/\(name).png")
     try! """
@@ -530,7 +530,7 @@ for (index, pose) in golden.enumerated() { install(pose, named: "dog_golden_\(in
 print("  dog_black_*  \(black[0].width)x\(black[0].height)")
 print("  dog_golden_* \(golden[0].width)x\(golden[0].height)")
 
-private let (bench, _) = load("BennysGreatEscape/Assets.xcassets/obstacle_bench.imageset/obstacle_bench.png")
+private let (bench, _) = load("BennysGreatEscape/Assets.xcassets/phase_one/gameplay/obstacles/bench/obstacle_bench.imageset/obstacle_bench.png")
 private let seat = seatLine(of: bench)
 print("  obstacle_bench \(bench.width)x\(bench.height); seat runs from its back edge at row"
     + " \(seat.back) to its front lip at row \(seat.front)")

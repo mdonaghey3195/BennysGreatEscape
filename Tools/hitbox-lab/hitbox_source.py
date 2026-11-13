@@ -233,8 +233,18 @@ def png_aspect(path):
     return w / h
 
 
+def imagesets(root):
+    """Every .imageset in the catalog, by name, wherever it's filed."""
+    found = {}
+    for dirpath, dirnames, _ in os.walk(os.path.join(root, APP, 'Assets.xcassets')):
+        for d in dirnames:
+            if d.endswith('.imageset'):
+                found[d[:-len('.imageset')]] = os.path.join(dirpath, d)
+    return found
+
+
 def image_aspect(root, name):
-    folder = os.path.join(root, APP, 'Assets.xcassets', f'{name}.imageset')
+    folder = imagesets(root).get(name, '')
     pngs = sorted(f for f in os.listdir(folder) if f.endswith('.png')) if os.path.isdir(folder) else []
     if not pngs:
         raise SourceError(f'no PNG for image {name}')
@@ -348,8 +358,7 @@ def load_world(root, edit=None):
         interval = {'start': float(m.group(1)), 'floor': float(n.group(1)), 'step': float(n.group(2)),
                     'speedStep': float(s.group(1))}
 
-    assets = os.path.join(root, APP, 'Assets.xcassets')
-    frames = len([d for d in os.listdir(assets) if re.fullmatch(r'benny_jump_\d+\.imageset', d)])
+    frames = len([n for n in imagesets(root) if re.fullmatch(r'benny_jump_\d+', n)])
     return World(consts, done, gravity, weights, frames, image_aspect(root, 'benny_run_0'), interval)
 
 

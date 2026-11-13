@@ -572,7 +572,7 @@ private func compose(
 // MARK: - The asset catalogue
 
 private func install(_ frame: Bitmap, named name: String) {
-    let directory = "BennysGreatEscape/Assets.xcassets/\(name).imageset"
+    let directory = "BennysGreatEscape/Assets.xcassets/phase_one/cutscene/intro/\(name).imageset"
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
     write(frame, to: "\(directory)/\(name).png")
     // Matches every other imageset here: one universal representation and no

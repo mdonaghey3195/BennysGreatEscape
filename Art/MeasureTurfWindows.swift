@@ -93,7 +93,7 @@ private func load(_ path: String) -> Bitmap {
 
 // MARK: - Measuring
 
-private let sheet = load("BennysGreatEscape/Assets.xcassets/bg_scroll.imageset/bg_scroll.png")
+private let sheet = load("BennysGreatEscape/Assets.xcassets/phase_one/gameplay/backgrounds/bg_scroll.imageset/bg_scroll.png")
 
 /// The same median-across-columns reading `CropBackground` takes, so the rows
 /// mean here what they mean there — and measured off the installed sheet, so a

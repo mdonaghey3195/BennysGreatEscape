@@ -128,7 +128,9 @@ private func write(_ bitmap: Bitmap, to path: String) {
 }
 
 private func install(_ frame: Bitmap, named name: String) {
-    let directory = "BennysGreatEscape/Assets.xcassets/\(name).imageset"
+    // benny_run_3 -> run, benny_jump_0 -> jump, benny_slide_7 -> slide.
+    let clip = name.split(separator: "_")[1]
+    let directory = "BennysGreatEscape/Assets.xcassets/phase_one/gameplay/benny/\(clip)/\(name).imageset"
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
     write(frame, to: "\(directory)/\(name).png")
     try! """

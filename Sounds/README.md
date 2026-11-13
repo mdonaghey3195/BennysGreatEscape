@@ -10,7 +10,7 @@ Five sounds ship: four synthesised, one real.
 | `sfx_crash.wav` | `make_sfx.py` | Running into something wooden |
 | `sfx_bark_0.wav`, `sfx_bark_1.wav` | `cut_bark.py` | Benny, off a phone recording |
 
-They live in `../BennysGreatEscape/` beside `benny_theme.m4a`. That folder is a
+They live in `../BennysGreatEscape/Audio/phase_one/sfx/` (the theme is in `Audio/shared/music/`). That folder is a
 synchronised group in the Xcode project, so a file dropped into it is in the
 build — no project edits, and `Sfx.swift` finds them by name.
 
@@ -23,7 +23,7 @@ do on the frame it is asked to play on.
     python3 Sounds/make_sfx.py
 
 Writes to `Sounds/preview/`. Listen with `afplay Sounds/preview/sfx_land.wav`,
-and when you're happy, copy the ones you changed into `../BennysGreatEscape/`.
+and when you're happy, copy the ones you changed into `../BennysGreatEscape/Audio/phase_one/sfx/`.
 The preview step is deliberate: these are quick to render and slow to judge, and
 nothing should reach the app unheard.
 
