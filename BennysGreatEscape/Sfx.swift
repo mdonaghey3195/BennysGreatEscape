@@ -74,6 +74,14 @@ final class Sfx {
     /// settings row says "Turn game sounds on or off", so it means all of them.
     var isEnabled = true
 
+    /// Where `play` is sent. `AVAudioPlayer.play()` is a synchronous call into
+    /// Core Audio, and it measured 5–20 ms when the player has to prime itself
+    /// again — which is every jump, since the jump sound has long finished by
+    /// the next one. On the main thread that is most of a frame at 60 Hz. Off
+    /// it, the sound starts a millisecond or two later and the frame is
+    /// untouched. Serial, so two voices of one sound can't race each other.
+    private let queue = DispatchQueue(label: "sfx", qos: .userInteractive)
+
     private var voices: [Sound: [AVAudioPlayer]] = [:]
     private var nextVoice: [Sound: Int] = [:]
     private var barks: [AVAudioPlayer] = []
@@ -85,7 +93,17 @@ final class Sfx {
 
     /// Called once at launch. Safe to call again; it only does anything the
     /// first time.
+    ///
+    /// The loading happens on `queue`, the same one `play` goes through, so a
+    /// sound asked for before the loading is done simply waits its turn. Done
+    /// on the main thread it measured 200–270 ms — activating the audio
+    /// session and opening a half-dozen files — all of it before the title
+    /// could draw.
     func prepare() {
+        queue.async { self.load() }
+    }
+
+    private func load() {
         guard !isLoaded else { return }
         isLoaded = true
 
@@ -130,25 +148,34 @@ final class Sfx {
     // MARK: - Playing
 
     func play(_ sound: Sound) {
-        guard isEnabled, let players = voices[sound], !players.isEmpty else { return }
+        guard isEnabled else { return }
+        // Everything from here runs on `queue`: the players are loaded there
+        // too, so a sound asked for early waits for them rather than finding
+        // the table half-built.
+        queue.async {
+            guard let players = self.voices[sound], !players.isEmpty else { return }
 
-        // Round-robin rather than "the first one not playing": with two voices
-        // they come to the same thing, and this can't be fooled by a player
-        // that has finished but not yet reported it.
-        let index = (nextVoice[sound] ?? 0) % players.count
-        nextVoice[sound] = index + 1
+            // Round-robin rather than "the first one not playing": with two
+            // voices they come to the same thing, and this can't be fooled by a
+            // player that has finished but not yet reported it.
+            let index = (self.nextVoice[sound] ?? 0) % players.count
+            self.nextVoice[sound] = index + 1
 
-        let player = players[index]
-        player.currentTime = 0
-        player.play()
+            let player = players[index]
+            player.currentTime = 0
+            Probe.time("Sfx.play \(sound.rawValue)") { player.play() }
+        }
     }
 
     /// The real dog, off a phone recording. More than one take of him, picked
     /// between at random: a bark is the most recognisable sound in the game and
     /// the same waveform twice is what gives a sample away.
     func bark() {
-        guard isEnabled, let player = barks.randomElement() else { return }
-        player.currentTime = 0
-        player.play()
+        guard isEnabled else { return }
+        queue.async {
+            guard let player = self.barks.randomElement() else { return }
+            player.currentTime = 0
+            player.play()
+        }
     }
 }

@@ -30,6 +30,10 @@ final class Leaderboard: ObservableObject {
 
     private var hasRequestedAuthentication = false
 
+    /// A run that ended before Game Center had answered. Posted the moment it
+    /// does — see `authenticate` — so deferring the sign-in costs no score.
+    private var pending: Int?
+
     private init() {}
 
     // MARK: - Signing in
@@ -42,8 +46,13 @@ final class Leaderboard: ObservableObject {
     /// anywhere: the game is fully playable signed out, and a title screen that
     /// waited on the network before it would take a tap would be a bad trade
     /// for a feature most players open once.
+    /// Off for the Hitbox Lab, which crashes Benny a few hundred times a run
+    /// and must not have Game Center's sign-in sheet land in the middle of a
+    /// case. Set alongside the music and sound switches in `HitboxLab.runAll`.
+    var isEnabled = true
+
     func authenticate() {
-        guard !hasRequestedAuthentication else { return }
+        guard isEnabled, !hasRequestedAuthentication else { return }
         hasRequestedAuthentication = true
 
         GKLocalPlayer.local.authenticateHandler = { [weak self] viewController, _ in
@@ -55,6 +64,11 @@ final class Leaderboard: ObservableObject {
                 return
             }
             self?.isAuthenticated = GKLocalPlayer.local.isAuthenticated
+            Probe.mark("GameKit authenticate finished, signed in: \(GKLocalPlayer.local.isAuthenticated)")
+            if let self, self.isAuthenticated, let score = self.pending {
+                self.pending = nil
+                self.submit(score)
+            }
             // Off, always. It is a floating Game Center widget that parks
             // itself over a corner of the artwork and stays there during play,
             // on top of the score.
@@ -84,7 +98,14 @@ final class Leaderboard: ObservableObject {
     /// start another run, so nothing here is awaited and nothing is surfaced.
     /// The score is not lost in any way that matters: the next run posts again.
     func submit(_ score: Int) {
-        guard isAuthenticated else { return }
+        guard isAuthenticated else {
+            // The first game over of a launch is where the sign-in happens —
+            // see `GameView` — so the first score is held until it has.
+            guard isEnabled else { return }
+            pending = max(pending ?? 0, score)
+            authenticate()
+            return
+        }
         Task {
             try? await GKLeaderboard.submitScore(
                 score,

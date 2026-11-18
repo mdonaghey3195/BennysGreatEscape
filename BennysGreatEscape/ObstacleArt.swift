@@ -258,6 +258,11 @@ extension GameScene {
             /// an overlay with no frames draws nothing at all.
             var hasOverlayArt: Bool { !overlays.isEmpty && overlays.allSatisfy { !$0.frames.isEmpty } }
 
+            /// Everything this piece draws with, for `ArtWarmer` to load ahead.
+            var textures: [SKTexture] {
+                [texture].compactMap { $0 } + hangs.compactMap(\.texture) + overlays.flatMap(\.frames)
+            }
+
             /// Width over height of the drawing — what turns a height into a
             /// width, here and in `size(height:)`. Same fallback as that, for the
             /// same reason.
@@ -617,6 +622,12 @@ extension GameScene {
     /// Covering grass with more grass is why the last version had no visible gap
     /// at all.
     enum Cliff {
+        /// The pit's drawing, held once. Every cliff used to read it from the
+        /// catalogue afresh, and each copy was a new texture the GPU was handed
+        /// on the frame that cliff first drew — a stall in the middle of a run,
+        /// every time one came round, and the one pause that wasn't first-use.
+        static let sheet: SKTexture? = UIImage(named: "cliff_gap").map(SKTexture.init(image:))
+
         /// `cliff_gap.png` (247×135), measured: how wide the crop is, how wide
         /// the opening inside it is, the turf band's thickness beside it, and
         /// the crop's full height. Printed by `Art/CutCliffGap.swift`, which cuts

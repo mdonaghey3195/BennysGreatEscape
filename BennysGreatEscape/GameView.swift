@@ -41,6 +41,10 @@ struct GameView: View {
     @AppStorage("musicOn") private var musicOn = true
     @State private var hint: Hint?
 
+    /// Play was tapped before the run's art had finished loading. The run
+    /// starts on its own the moment it has — see `start`.
+    @State private var startWhenReady = false
+
     private enum Hint {
         case jump, slide
     }
@@ -50,13 +54,27 @@ struct GameView: View {
             SpriteView(scene: scene)
                 .ignoresSafeArea()
 
-            // Two conditions rather than one switch: the clip has neither over
-            // it — including nothing to tap, so the tap that skips it reaches
-            // the scene — and an `EmptyView` branch gives SwiftUI nothing to
-            // transition to, which costs the title its fade and pops it off.
-            if phase == .playing {
-                scoreboard
-                    .transition(.opacity)
+            // Always in the tree, shown by opacity, rather than added when the
+            // run begins. A view's first layout is its dear one — the rounded
+            // font, the symbol, the shadow are all loaded then — and added on
+            // the frame the run started it measured 60–120 ms of main thread,
+            // with the hint card: a visible catch on Benny's first stride.
+            // Laid out here at launch it costs the title screen instead, where
+            // nothing is moving. Hit-testing is off while hidden so the clip's
+            // skip-tap still reaches the scene.
+            scoreboard
+                .opacity(phase == .playing ? 1 : 0)
+                .allowsHitTesting(phase == .playing)
+                .animation(.easeOut(duration: 0.35), value: phase)
+
+            // The same for the hint card: one of each is laid out invisibly at
+            // launch, so the first one that matters is a fade and not a build.
+            if hint == nil {
+                HintCard(symbol: "arrow.up", title: "JUMP!", detail: "Swipe up to leap over obstacles.")
+                    .opacity(0)
+                    .allowsHitTesting(false)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 60)
             }
 
             // Sits above the scene and takes the first tap itself, so the
@@ -72,6 +90,20 @@ struct GameView: View {
                     .padding(.bottom, 60)
                     .allowsHitTesting(false)
             }
+
+            // Only ever seen on a tap that beat the loading, which on a phone
+            // means a tap within about a second of launch.
+            if startWhenReady {
+                Text("Loading…")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(.black.opacity(0.35), in: Capsule())
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 40)
+                    .transition(.opacity)
+            }
         }
         .statusBarHidden()
         .onAppear {
@@ -82,12 +114,17 @@ struct GameView: View {
             // Both loaded up front: an effect that decodes its file on the frame
             // it first plays, and a haptic generator that spins the engine up on
             // the frame it first fires, are both a miss.
-            Sfx.shared.prepare()
-            Haptics.prepare()
-            // Started at launch and never waited on. The game is fully
-            // playable signed out, and the board is a screen most players open
-            // once.
-            Leaderboard.shared.authenticate()
+            Probe.time("Sfx.prepare") { Sfx.shared.prepare() }
+            Probe.time("Music.prepare") { Music.shared.prepare() }
+            Probe.time("Haptics.prepare") { Haptics.prepare() }
+            // Game Center is *not* signed into here. It used to be, and the
+            // sign-in finishes a second or so after launch with a system
+            // banner — or, signed out, a sheet — on the main thread: measured
+            // at 450–600 ms of stall in the simulator, landing under the title
+            // or, for a quick tap on Play, on the opening clip. It now happens
+            // at the first game over, where the screen is still and the
+            // player is reading "Tap to retry", or when the board is opened.
+            // `Leaderboard.submit` holds that first score until it is signed in.
             scene.onScoreChange = { score = $0 }
             scene.onGameOver = {
                 bestScore = max(bestScore, $0)
@@ -105,6 +142,13 @@ struct GameView: View {
                 seenSlideHint = true
                 show(.slide)
             }
+            Probe.mark("title up")
+            #if DEBUG
+            // `-AutoPlay`: taps Play two seconds in — see `GameScene.autoplayTick`.
+            if GameScene.autoplays {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { start() }
+            }
+            #endif
         }
     }
 
@@ -119,6 +163,7 @@ struct GameView: View {
     }
 
     private func show(_ which: Hint) {
+        scene.note("hint card \(which)")
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { hint = which }
         Task {
             try? await Task.sleep(for: .seconds(3.5))
@@ -134,7 +179,22 @@ struct GameView: View {
     /// The card can be dropped in the same turn because the scene isn't
     /// changing under it — the clip has been standing there behind it since the
     /// world was built. See `stageIntro`.
+    ///
+    /// Held until the run's art is decoded and on the GPU. `ArtWarmer` starts
+    /// that the moment the scene is built, and on a phone it is done well
+    /// before a finger can reach the button; the hold is for the tap that
+    /// isn't, so that a run never opens on a frame that is still loading.
     private func start() {
+        guard GameScene.ArtWarmer.isReady(.run) else {
+            guard !startWhenReady else { return }
+            withAnimation(.easeOut(duration: 0.2)) { startWhenReady = true }
+            GameScene.ArtWarmer.whenReady(.run) {
+                startWhenReady = false
+                start()
+            }
+            return
+        }
+        Probe.mark("Play tapped")
         scene.start()
         withAnimation(.easeOut(duration: 0.35)) { phase = .intro }
     }
@@ -146,6 +206,7 @@ struct GameView: View {
     /// the music lands with Benny. Likewise the jump hint, which would otherwise
     /// have come and gone before there was anything to jump.
     private func beginPlaying() {
+        scene.note("run begins")
         Music.shared.play()
         withAnimation(.easeOut(duration: 0.35)) { phase = .playing }
         if !seenJumpHint {

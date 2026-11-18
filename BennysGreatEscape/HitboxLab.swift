@@ -272,6 +272,10 @@ final class HitboxLab {
     }
     static var showPhysics: Bool { arguments.contains("-ShowPhysics") || arguments.contains("-HitboxLab") }
 
+    /// SpriteKit's own frame rate, draw count and node count in the corner.
+    /// `-ShowStats` in the scheme's arguments, for watching a run on a phone.
+    static var showStats: Bool { arguments.contains("-ShowStats") }
+
     /// Creates the lab if the launch arguments ask for it.
     static func configure(scene: GameScene) -> HitboxLab? {
         if let shared { shared.scene = scene; return shared }
@@ -411,6 +415,7 @@ final class HitboxLab {
     func runAll() async {
         Music.shared.isEnabled = false
         Sfx.shared.isEnabled = false
+        Leaderboard.shared.isEnabled = false
         for name in ["results.jsonl", "sweep.jsonl", "DONE"] where mode != "cases" || name != "sweep.jsonl" {
             try? FileManager.default.removeItem(at: out.appendingPathComponent(name))
         }

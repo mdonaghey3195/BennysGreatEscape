@@ -48,6 +48,28 @@ final class Music {
 
     // MARK: - What the game asks for
 
+    /// Loads the player before it is wanted. Called once at launch, next to
+    /// `Sfx.prepare`, for the same reason: left to `play`, the file was opened,
+    /// the session activated and the first buffers decoded on the main thread
+    /// on the exact frame the run began — a stall at the start of every first
+    /// run of a session.
+    ///
+    /// Built off the main thread — opening the file and activating the session
+    /// measured 200 ms, all of it before the title could draw — and handed over
+    /// on it. If a run has started before the hand-over, `sync` has already
+    /// loaded its own and this one is dropped.
+    func prepare() {
+        guard player == nil else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let built = Self.build()
+            DispatchQueue.main.async {
+                guard self.player == nil, let built else { return }
+                self.player = built
+                self.sync()
+            }
+        }
+    }
+
     /// Starts a run's music, from the top if it had been stopped.
     func play() {
         wanted = true
@@ -89,10 +111,17 @@ final class Music {
         }
         guard let player = player ?? load() else { return }
         player.setVolume(isDucked ? Self.ducked : Self.full, fadeDuration: Self.fade)
-        if !player.isPlaying { player.play() }
+        if !player.isPlaying { Probe.time("Music.play") { player.play() } }
     }
 
     private func load() -> AVAudioPlayer? {
+        let built = Self.build()
+        player = built
+        return built
+    }
+
+    /// The player, ready to go, or nil if the device's audio won't have it.
+    private static func build() -> AVAudioPlayer? {
         guard let url = Bundle.main.url(forResource: "benny_theme", withExtension: "m4a") else {
             return nil
         }
@@ -111,7 +140,6 @@ final class Music {
             // bar arrives at full volume before the fade can take hold.
             player.volume = 0
             player.prepareToPlay()
-            self.player = player
             return player
         } catch {
             // A game with no music is still a game. Anything thrown here is

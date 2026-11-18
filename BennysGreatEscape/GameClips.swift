@@ -30,16 +30,16 @@ extension GameScene {
         /// takeoff, and a dog inflating against turf that kept its size doesn't read
         /// as a camera closing in; it reads as a dog inflating.
         ///
-        /// 0.76 because the two drawings disagree about what shape Benny is. At
-        /// equal width the drawn dog stands about a fifth taller than the run
-        /// sheet's gallop, so there is no size at which he matches on both — this is
-        /// the one where his height does, which is the steadier of the two: the
-        /// gallop swings 95…122pt through its own cycle but only 67…76pt tall.
+        /// Set where the drawn dog and the gallop he dissolves into are the same
+        /// size on screen, which the two drawings only roughly agree on: the gallop
+        /// swings 80…97pt wide through its own cycle and 54…60pt tall. At 0.84 the
+        /// redrawn dog on the handoff frame plays 84 by 58, inside both ranges. It
+        /// was 0.76 on the old sheet, whose dog was drawn squatter, and at 0.76 the
+        /// redrawn one came in at 76 by 52 — Benny visibly swelled as he faded in.
         ///
-        /// It is also as large as the shot can be staged. Every point of this eats
-        /// the width the rabbit needs to be carried in on, and past about here he
-        /// stops arriving before Benny lunges at him.
-        static let scale: CGFloat = 0.76
+        /// Every point of this eats the width the rabbit is staged in, so it
+        /// shouldn't drift up past what the handoff needs.
+        static let scale: CGFloat = 0.84
 
         /// Sized so the drawn dog is `scale` of the dog you then play as. That one
         /// measurement is what lets the handoff be a cut rather than a trick: Benny
@@ -125,7 +125,13 @@ extension GameScene {
         /// he breaks into (see `handOff`) has meaningfully less ground to cover —
         /// raising this is the one lever for that, since his run-off distance is
         /// always measured live from wherever this actually places him.
-        static let rabbitAheadFraction: CGFloat = 1.8
+        ///
+        /// 2.5 and not the 1.8 it was, because the redrawn walk is a narrower
+        /// drawing: the dog takes up more of it, so sizing the clip by the dog
+        /// leaves the walker some 161pt wide where it was 223. At 1.8 of that the
+        /// rabbit would sit 110pt nearer the man than he did; at 2.5 he is back on
+        /// the same mark, about 400pt ahead.
+        static let rabbitAheadFraction: CGFloat = 2.5
 
         /// The first two of the three beats: out for a walk, then Benny leaning into
         /// the leash until it comes out of the man's hand. Eight frames, then nine.
@@ -150,12 +156,15 @@ extension GameScene {
         /// A fraction of the drawing rather than a distance, because that is what a
         /// stride is: restage the clip at a different size and the same drawn legs
         /// cover more ground, so a fixed number here would put him straight back on
-        /// a treadmill. 0.206 is the 50pt this used to be, against the 243pt-wide
-        /// drawing it was measured on.
+        /// a treadmill. It was 0.206 on the old sheet — the 50pt it started life as,
+        /// against the 243pt-wide drawing it was measured on. The redrawn man takes
+        /// a shorter step for his size: heel to toe at full stride he spans 0.275 of
+        /// the canvas where the old one spanned 0.314, and this is 0.206 scaled by
+        /// the same ratio, so his feet keep the same grip on the turf they had.
         ///
         /// Short of a real stride even so. Raising it speeds the whole shot up,
         /// because everything below is measured off it.
-        static let strideFraction: CGFloat = 0.206
+        static let strideFraction: CGFloat = 0.180
         static var walkTravel: CGFloat { walkerSize.width * strideFraction }
 
         /// The pace the world rolls at through the clip, as a speed and as the
@@ -172,9 +181,29 @@ extension GameScene {
         /// timed against this, so it is derived here rather than counted twice.
         static var toHandoff: TimeInterval { 8 * walkFrame + 8 * lungeFrame + lungeFrame }
 
-        /// Slower than the rest, because there are only two of them and they are the
-        /// beat that has to land: the man reaching after Benny, and the man diving.
-        static let aloneFrame: TimeInterval = 0.20
+        /// The two frames with no dog drawn in them: the man reaching after Benny,
+        /// and the man diving. Slower than the rest, because there are only two of
+        /// them and they are the beat that has to land.
+        ///
+        /// Timed apart, because the dive is a miss and only reads as one if Benny
+        /// is already out of reach when it starts. They used to share 0.20, and at
+        /// 0.20 he wasn't: the ground had barely begun to move, Benny was drifting
+        /// back towards his mark and the man was stepping after him, which between
+        /// them left the dog some 7pt *nearer* the man than at the handoff — the
+        /// dive came down on top of him. Holding the reach for 0.45, with `pickUp`
+        /// shortened to match, opens about 58pt between them before he goes down:
+        /// better than half a dog's length, his hands coming down behind the tail.
+        ///
+        /// The reach is the knob. Longer and Benny is further off when the man
+        /// dives; much past half a second and the man is standing in a held pose
+        /// with the turf sliding under him.
+        static let reachFrame: TimeInterval = 0.45
+        static let diveFrame: TimeInterval = 0.20
+
+        /// How far the dive throws him forward, over the length of its one frame.
+        /// The ground is taking him back twice as fast by then, so the gap still
+        /// only opens.
+        static let diveLunge: CGFloat = 24
 
         /// Where the rabbit is planted, off the right of the scene, so that the turf
         /// delivers him to `rabbitX` exactly as the leash goes.
@@ -211,11 +240,19 @@ extension GameScene {
         static let takeoff: TimeInterval = 0.9
 
         /// How long the world takes to get up to speed once he goes.
-        static let pickUp: TimeInterval = 0.6
+        ///
+        /// 0.4 and not the 0.6 it was. The ground getting up to speed is what
+        /// carries the man away from Benny, and at 0.6 it took most of the reach
+        /// to do anything — see `reachFrame`, which is set against this.
+        static let pickUp: TimeInterval = 0.4
 
         /// A beat on Benny running, the man already carried out of frame behind
         /// him, before the score comes up over the top.
-        static let hold: TimeInterval = 0.55
+        ///
+        /// Counted from the end of the dive frame. Shortened from 0.55 by what the
+        /// longer reach added, so the clip still ends 0.95s after the handoff —
+        /// just past the 0.9 of `takeoff`.
+        static let hold: TimeInterval = 0.30
     }
 
 
@@ -234,6 +271,12 @@ extension GameScene {
         /// alone, so turning the knob back is the only thing that has to happen.
         static let debugAtScore: Int? = nil
         static var trigger: Int { debugAtScore ?? atScore }
+
+        /// How many points before the trigger the clip's art is loaded — see
+        /// `ArtWarmer`. Twenty obstacles is half a minute of play, which is far
+        /// more than the decode needs; it only has to be well clear of the
+        /// frame the dog house is staged on.
+        static let warmAhead = 20
 
         /// How big the dog house stands, from Benny's own length.
         static var houseWidth: CGFloat { Layout.dogWidth * LaunchArt.houseInDogs }
