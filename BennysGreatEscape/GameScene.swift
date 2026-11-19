@@ -205,6 +205,43 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// A flag can't drift. Setting it true twice is setting it true.
     private var isOnGround = false
 
+    #if DEBUG
+    /// Every obstacle this run has stood up, for the course audit — see
+    /// `HitboxLab.auditCourses`. Filled only while that is running; ordinary
+    /// play never switches it on.
+    struct LabSpawn: Codable {
+        var verb: String
+        var piece: String
+        var score: Int
+        var speed: Double
+        var x: Double
+        var width: Double
+        var height: Double
+        /// How far the world had scrolled when it was stood up. Obstacles are
+        /// nearly all spawned at the same `x` and separated by the time between
+        /// spawns, so this is what turns two spawns into a distance apart:
+        /// `x + scroll` is where a piece sits on the ground itself.
+        var scroll: Double
+        /// Seconds of timing the jump has over it — see `clearanceSlack`.
+        var slack: Double
+        /// For a duck piece, the room under its solid above Benny's paw line.
+        var underGap: Double
+    }
+    var labSpawns: [LabSpawn] = []
+
+    /// A number for each obstacle that is never handed out twice.
+    ///
+    /// The lab's course bot used to remember which obstacles it had answered
+    /// by their `ObjectIdentifier`, which is their address — and an obstacle
+    /// that scrolls off is freed, leaving its address for the next one to be
+    /// allocated at. A fresh obstacle could inherit the last one's record and
+    /// be skipped as already dealt with, which is what the bot was dying of.
+    static var labNextId = 0
+    var labLogsSpawns = false
+    /// Ground covered since this course began — see `LabSpawn.scroll`.
+    var labScroll: Double = 0
+    #endif
+
     private var obstacleTimer: TimeInterval = 0
 
     /// Every roll the spawner makes — see `SpawnDice`.
@@ -834,7 +871,41 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// less time to pass* — and it agrees with the old closed form to the
     /// millisecond. What it no longer does is flatten a disc into a rectangle.
     /// See `Solid.clearance` for what that cost.
-    private func obstacleHeight(_ piece: ObstacleArt.Piece, at speed: CGFloat) -> CGFloat {
+    /// How much timing an obstacle of this height gives at this speed: the
+    /// seconds between the earliest jump that clears it and the latest one that
+    /// does. Negative where it stands taller than the jump goes, and
+    /// `.greatestFiniteMagnitude` where its solid never reaches Benny at all.
+    ///
+    /// Lifted out of `obstacleHeight` — which solves for the height that makes
+    /// this equal `ObstacleArt.clearance` — so that the course audit can ask the
+    /// same question of a spawn after the fact, with the game's own arithmetic
+    /// rather than a copy of it. See `HitboxLab.auditCourses`.
+    func clearanceSlack(_ piece: ObstacleArt.Piece, height: CGFloat, at speed: CGFloat) -> TimeInterval {
+        switch clearanceWindow(piece, height: height, at: speed) {
+        case .clear: return .greatestFiniteMagnitude
+        case .impossible: return -1
+        case let .window(earliest, latest): return TimeInterval(latest - earliest)
+        }
+    }
+
+    /// When a jump has to leave the ground to clear an obstacle of this height
+    /// at this speed, as seconds either side of the moment the two would be
+    /// standing on the same spot. Both numbers are negative: a jump is taken
+    /// before the obstacle arrives, and `-latest` is the least lead that still
+    /// works.
+    ///
+    /// The whole of the arithmetic `obstacleHeight` solves against, and what
+    /// the lab's course bot aims with — so the bot's timing is the game's own
+    /// rather than a lead picked by hand that drifts wrong as the run speeds up.
+    enum Clearance {
+        /// The solid never reaches Benny. Nothing to time.
+        case clear
+        /// Taller than the jump goes, at any lead.
+        case impossible
+        case window(earliest: CGFloat, latest: CGFloat)
+    }
+
+    func clearanceWindow(_ piece: ObstacleArt.Piece, height: CGFloat, at speed: CGFloat) -> Clearance {
         let gravity = gravityAcceleration
         let launch = launchVelocity
         let dogSolid = Layout.dogSize.width * DogArt.bodyWidthFraction
@@ -849,7 +920,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         /// units, which is worth well under a millisecond of window.
         let samples = 96
 
-        func slack(_ height: CGFloat) -> TimeInterval {
+        do {
             // Half the ground over which the solid, grown by Benny's own box,
             // can touch him at all — exactly, so the end samples land on the
             // edge rather than inside it.
@@ -865,7 +936,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
                 guard need > 0 else { continue }
                 touches = true
                 let remaining = launch * launch - 2 * gravity * need
-                guard remaining > 0 else { return -1 }  // taller than the jump goes
+                guard remaining > 0 else { return .impossible }  // taller than the jump goes
                 // He is above `need` from `rising` to `falling` after launch, so
                 // to be above it when this point arrives he must have launched
                 // somewhere in between.
@@ -875,8 +946,14 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
                 latest = min(latest, arrives - rising)
                 earliest = max(earliest, arrives - falling)
             }
-            guard touches else { return .greatestFiniteMagnitude }
-            return TimeInterval(latest - earliest)
+            guard touches else { return .clear }
+            return .window(earliest: earliest, latest: latest)
+        }
+    }
+
+    private func obstacleHeight(_ piece: ObstacleArt.Piece, at speed: CGFloat) -> CGFloat {
+        func slack(_ height: CGFloat) -> TimeInterval {
+            clearanceSlack(piece, height: height, at: speed)
         }
 
         var low = piece.heightRange.lowerBound
@@ -1101,13 +1178,43 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         node.zPosition = 8
         node.name = "obstacle"
         #if DEBUG
+        if labLogsSpawns {
+            let slack = clearanceSlack(piece, height: height, at: gameSpeed)
+            labSpawns.append(LabSpawn(
+                verb: verb == .duck ? "duck" : "jump",
+                piece: Self.labName(of: piece),
+                score: score,
+                speed: Double(gameSpeed),
+                x: Double(x),
+                width: Double(piece.size(height: height).width),
+                height: Double(height),
+                scroll: labScroll,
+                slack: slack.isFinite ? slack : 99,
+                underGap: Double(height * piece.solid.basePerHeight
+                                 - (piece.sink - Layout.dogPlantDepth))
+            ))
+        }
         // What the Hitbox Lab's course bot needs to know to answer it.
         node.userData = NSMutableDictionary(dictionary: [
             "labVerb": verb == .duck ? "duck" : "jump",
             "labPiece": Self.labName(of: piece),
             "labHeight": height,
             "labWidth": piece.size(height: height).width,
+            "labId": Self.labNextId,
+            // Half the solid, which is what Benny actually collides with — the
+            // drawing is wider, and timing a slide against the drawing starts
+            // it earlier than it needs to be and runs it out before the piece
+            // has gone by.
+            "labSolidHalf": piece.solid.reach(height: height, aspect: piece.aspect, dogWidth: 0),
         ])
+        Self.labNextId += 1
+        // The middle of the window this one actually allows, in seconds of
+        // lead — see `clearanceWindow`. The bot jumps on it.
+        if case let .window(earliest, latest) = clearanceWindow(piece, height: height, at: gameSpeed) {
+            node.userData?["labLead"] = -(earliest + latest) / 2
+            node.userData?["labLeadLo"] = -latest
+            node.userData?["labLeadHi"] = -earliest
+        }
         #endif
         addChild(node)
         return Spawned(
@@ -1181,8 +1288,24 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             cliff.position = CGPoint(x: spawnX, y: Layout.groundTop)
             cliff.zPosition = 8
             cliff.name = "obstacle"
+            #if DEBUG
+            cliff.userData = NSMutableDictionary(dictionary: [
+                "labVerb": "cliff", "labPiece": "cliff", "labWidth": gap,
+                "labId": Self.labNextId,
+            ])
+            Self.labNextId += 1
+            #endif
             addChild(cliff)
             note("spawn cliff")
+            #if DEBUG
+            if labLogsSpawns {
+                labSpawns.append(LabSpawn(
+                    verb: "cliff", piece: "cliff", score: score, speed: Double(gameSpeed),
+                    x: Double(spawnX), width: Double(gap), height: 0, scroll: labScroll,
+                    slack: Double(airtime) - Double(gap) / Double(gameSpeed), underGap: 0
+                ))
+            }
+            #endif
             activeCliff = cliff
             activeCliffGap = gap
             lastCliffScore = score
@@ -1226,6 +1349,15 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             let follower = spawn(.jump, at: Layout.spawnX)
             let separation = pairSeparation(from: lead, to: follower)
             follower.node.position.x = Layout.spawnX + separation
+            #if DEBUG
+            // The audit logged the follower inside `spawn`, where it still
+            // stood on the mark every obstacle starts from. This is where it
+            // actually ends up, and the distance between the two is the whole
+            // point of a pair.
+            if labLogsSpawns, !labSpawns.isEmpty {
+                labSpawns[labSpawns.count - 1].x = Double(Layout.spawnX + separation)
+            }
+            #endif
             // The pair is two obstacles' worth of screen, so the next one waits
             // the extra out rather than landing on the second one's heels.
             obstacleTimer -= separation / gameSpeed
@@ -1867,6 +1999,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // The man is pinned to the turf rather than given a slide of his own, so
         // that when the world does start moving he can't moonwalk against it.
         let step = gameSpeed * worldScroll * CGFloat(delta)
+        #if DEBUG
+        if labLogsSpawns { labScroll += Double(step) }
+        #endif
         scrollLand(by: step)
         if introRidesAlong {
             intro?.position.x -= step

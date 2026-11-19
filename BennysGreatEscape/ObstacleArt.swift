@@ -45,6 +45,16 @@ extension GameScene {
 
             /// How far the solid reaches above the drawing's foot, per unit of the
             /// drawing's height — how high Benny has to get.
+            /// The underside of the solid, as a fraction of the drawing's
+            /// height — what Benny ducks beneath. The disc case is its lowest
+            /// point, which is the honest answer for something with no bar.
+            var basePerHeight: CGFloat {
+                switch self {
+                case let .box(_, _, base): base
+                case let .disc(radius, centre): max(0, centre - radius)
+                }
+            }
+
             var topPerHeight: CGFloat {
                 switch self {
                 case let .box(_, height, base): base + height
