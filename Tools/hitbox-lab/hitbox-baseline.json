@@ -48,7 +48,7 @@
    "ObstacleArt.swingsetSink": 4.8,
    "ObstacleArt.swingsetUnderbar": 0.393
   },
-  "dogAspect": 1.4036,
+  "dogAspect": 1.4035,
   "gravity": 1350.0,
   "jumpFrames": 10,
   "jumpWeights": [
@@ -380,6 +380,6 @@
    }
   },
   "spawnFloorVsAirtimeMs": 376.2,
-  "standingTop": 56.78
+  "standingTop": 56.79
  }
 }

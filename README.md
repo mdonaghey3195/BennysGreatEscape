@@ -2,6 +2,45 @@
 
 A 2D IOS Game
 
+## Checking performance on a phone
+
+The game is tuned so nothing is decoded or handed to the GPU mid-run: every
+animation is packed into a sprite atlas, and `ArtWarmer` loads each stage's
+art before the stage arrives. If a run still stutters, check these in order.
+
+1. **Build Release.** The scheme's Run action is a Debug build with Swift
+   optimisation off. Test on the phone through TestFlight, or with Product →
+   Profile, which builds Release. Only the Profile and Archive actions do.
+2. **Low Power Mode off, phone cool.** Both throttle the CPU and GPU and look
+   exactly like a slow game.
+3. **Watch the frame rate in the game.** Add `-ShowStats` to the scheme's
+   arguments (Edit Scheme → Run → Arguments) for SpriteKit's own frame rate,
+   draw count and node count in the corner. Debug builds only.
+4. **Log the hitches.** Add `-LogHitches` to the scheme's arguments and play
+   from Xcode; works in Release too (Edit Scheme → Run → Build Configuration).
+   Every frame over 50 ms prints a `HITCH` line to the console with the score,
+   what Benny was doing, what had just happened (a jump, a landing, a spawn),
+   which obstacles were on screen and which art stages had finished loading.
+   `NOTE` lines give the timeline those sit in, and `PROBE` lines time the
+   few calls that have stalled a frame before. That turns "it sometimes
+   pauses" into a list.
+5. **Let it play itself.** Add `-AutoPlay` as well (Debug builds) and the
+   game taps Play, jumps and slides by a crude rule, and retries after a
+   crash — so the whole opening can be watched for hitches in the simulator
+   with nobody at the screen. The November 2026 pass used exactly this: the
+   first landing's dust puff, the HUD's first layout, sound playback on the
+   main thread and Game Center's sign-in each showed up as a `HITCH` line
+   and were fixed one at a time.
+6. **Instruments.** Product → Profile, then the Animation Hitches template, and
+   play one run through to the dog house. A hitch that lines up with the first
+   jump, first slide, a cliff or the launch means something is loading late —
+   see `ArtWarmer` in `GameArt.swift` for what is loaded when.
+7. **Memory.** Xcode's Debug navigator gauge should settle a little over
+   100 MB during a run and climb once for the launch and once for the flight.
+
+Benny's frames ship at 640 px wide, down from the 1259 px they are drawn at;
+`Art/benny_fullres/README.md` has the originals and how to put them back.
+
 ## Testing hitboxes
 
 `Tools/hitbox-lab/validate.sh` checks that collisions still behave the way they should. It builds the app, runs Benny through a few hundred staged jumps, slides and landings in the iOS simulator or on your iPhone, and compares the results with recorded expectations. It ends with `HITBOX VALIDATION PASSED` or `FAILED` and exits 0 or 1. Run it before merging anything that touches the hitbox, obstacle sizes, jump physics or the spawner.

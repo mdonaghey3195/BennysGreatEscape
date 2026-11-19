@@ -17,6 +17,32 @@ import UIKit
 
 // MARK: - Scene
 
+/// Timing lines for the console, on when `-LogHitches` is in the scheme's
+/// arguments. `mark` stamps a moment; `time` stamps a piece of work that took
+/// more than a millisecond. The hitch log in `GameScene.update` shares the
+/// clock, so the three can be read against each other.
+enum Probe {
+    static let isOn = ProcessInfo.processInfo.arguments.contains("-LogHitches")
+
+    /// Seconds since the process started, to a tenth. SpriteKit's own
+    /// `currentTime` is the same clock, which is what makes the lines line up.
+    static var now: TimeInterval { ProcessInfo.processInfo.systemUptime - launch }
+    private static let launch = ProcessInfo.processInfo.systemUptime
+
+    static func mark(_ what: String) {
+        guard isOn else { return }
+        print(String(format: "PROBE t=%.1fs  %@", now, what))
+    }
+
+    static func time(_ what: String, _ work: () -> Void) {
+        guard isOn else { work(); return }
+        let before = ProcessInfo.processInfo.systemUptime
+        work()
+        let took = (ProcessInfo.processInfo.systemUptime - before) * 1000
+        if took >= 1 { print(String(format: "PROBE t=%.1fs  %@ took %.0f ms", now, what, took)) }
+    }
+}
+
 final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     // Nodes
@@ -179,6 +205,43 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// A flag can't drift. Setting it true twice is setting it true.
     private var isOnGround = false
 
+    #if DEBUG
+    /// Every obstacle this run has stood up, for the course audit — see
+    /// `HitboxLab.auditCourses`. Filled only while that is running; ordinary
+    /// play never switches it on.
+    struct LabSpawn: Codable {
+        var verb: String
+        var piece: String
+        var score: Int
+        var speed: Double
+        var x: Double
+        var width: Double
+        var height: Double
+        /// How far the world had scrolled when it was stood up. Obstacles are
+        /// nearly all spawned at the same `x` and separated by the time between
+        /// spawns, so this is what turns two spawns into a distance apart:
+        /// `x + scroll` is where a piece sits on the ground itself.
+        var scroll: Double
+        /// Seconds of timing the jump has over it — see `clearanceSlack`.
+        var slack: Double
+        /// For a duck piece, the room under its solid above Benny's paw line.
+        var underGap: Double
+    }
+    var labSpawns: [LabSpawn] = []
+
+    /// A number for each obstacle that is never handed out twice.
+    ///
+    /// The lab's course bot used to remember which obstacles it had answered
+    /// by their `ObjectIdentifier`, which is their address — and an obstacle
+    /// that scrolls off is freed, leaving its address for the next one to be
+    /// allocated at. A fresh obstacle could inherit the last one's record and
+    /// be skipped as already dealt with, which is what the bot was dying of.
+    static var labNextId = 0
+    var labLogsSpawns = false
+    /// Ground covered since this course began — see `LabSpawn.scroll`.
+    var labScroll: Double = 0
+    #endif
+
     private var obstacleTimer: TimeInterval = 0
 
     /// Every roll the spawner makes — see `SpawnDice`.
@@ -234,6 +297,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         labWillBuild(in: view)
         #endif
         build()
+        // After `build`, which has already pulled in the gallop and the opening
+        // clip on this thread: everything else the run draws is loaded now,
+        // while the title card is up, rather than on the frame it first appears.
+        ArtWarmer.warm(.run)
     }
 
     private func build() {
@@ -574,6 +641,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// would clear a rail at the opening speed and fall short at the top one.
     private func slide() {
         guard isOnGround, !isSliding, !DogArt.slideFrames.isEmpty else { return }
+        note("slide")
         isSliding = true
         Sfx.shared.play(.slide)
         Haptics.slide()
@@ -721,6 +789,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         if isSliding { endSlide() }
         guard isOnGround else { return }
         hasLeftGround = true
+        note("jump")
         Sfx.shared.play(.jump)
         // Velocity is set directly from the desired apex rather than applying an
         // impulse, which would depend on the body's mass — and therefore on the
@@ -802,7 +871,41 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// less time to pass* — and it agrees with the old closed form to the
     /// millisecond. What it no longer does is flatten a disc into a rectangle.
     /// See `Solid.clearance` for what that cost.
-    private func obstacleHeight(_ piece: ObstacleArt.Piece, at speed: CGFloat) -> CGFloat {
+    /// How much timing an obstacle of this height gives at this speed: the
+    /// seconds between the earliest jump that clears it and the latest one that
+    /// does. Negative where it stands taller than the jump goes, and
+    /// `.greatestFiniteMagnitude` where its solid never reaches Benny at all.
+    ///
+    /// Lifted out of `obstacleHeight` — which solves for the height that makes
+    /// this equal `ObstacleArt.clearance` — so that the course audit can ask the
+    /// same question of a spawn after the fact, with the game's own arithmetic
+    /// rather than a copy of it. See `HitboxLab.auditCourses`.
+    func clearanceSlack(_ piece: ObstacleArt.Piece, height: CGFloat, at speed: CGFloat) -> TimeInterval {
+        switch clearanceWindow(piece, height: height, at: speed) {
+        case .clear: return .greatestFiniteMagnitude
+        case .impossible: return -1
+        case let .window(earliest, latest): return TimeInterval(latest - earliest)
+        }
+    }
+
+    /// When a jump has to leave the ground to clear an obstacle of this height
+    /// at this speed, as seconds either side of the moment the two would be
+    /// standing on the same spot. Both numbers are negative: a jump is taken
+    /// before the obstacle arrives, and `-latest` is the least lead that still
+    /// works.
+    ///
+    /// The whole of the arithmetic `obstacleHeight` solves against, and what
+    /// the lab's course bot aims with — so the bot's timing is the game's own
+    /// rather than a lead picked by hand that drifts wrong as the run speeds up.
+    enum Clearance {
+        /// The solid never reaches Benny. Nothing to time.
+        case clear
+        /// Taller than the jump goes, at any lead.
+        case impossible
+        case window(earliest: CGFloat, latest: CGFloat)
+    }
+
+    func clearanceWindow(_ piece: ObstacleArt.Piece, height: CGFloat, at speed: CGFloat) -> Clearance {
         let gravity = gravityAcceleration
         let launch = launchVelocity
         let dogSolid = Layout.dogSize.width * DogArt.bodyWidthFraction
@@ -817,7 +920,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         /// units, which is worth well under a millisecond of window.
         let samples = 96
 
-        func slack(_ height: CGFloat) -> TimeInterval {
+        do {
             // Half the ground over which the solid, grown by Benny's own box,
             // can touch him at all — exactly, so the end samples land on the
             // edge rather than inside it.
@@ -833,7 +936,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
                 guard need > 0 else { continue }
                 touches = true
                 let remaining = launch * launch - 2 * gravity * need
-                guard remaining > 0 else { return -1 }  // taller than the jump goes
+                guard remaining > 0 else { return .impossible }  // taller than the jump goes
                 // He is above `need` from `rising` to `falling` after launch, so
                 // to be above it when this point arrives he must have launched
                 // somewhere in between.
@@ -843,8 +946,14 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
                 latest = min(latest, arrives - rising)
                 earliest = max(earliest, arrives - falling)
             }
-            guard touches else { return .greatestFiniteMagnitude }
-            return TimeInterval(latest - earliest)
+            guard touches else { return .clear }
+            return .window(earliest: earliest, latest: latest)
+        }
+    }
+
+    private func obstacleHeight(_ piece: ObstacleArt.Piece, at speed: CGFloat) -> CGFloat {
+        func slack(_ height: CGFloat) -> TimeInterval {
+            clearanceSlack(piece, height: height, at: speed)
         }
 
         var low = piece.heightRange.lowerBound
@@ -890,7 +999,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     ///
     /// Drawn square and squashed at the point of use, so `Layout.shadowFlatness`
     /// stays the one place that decides how flat they sit.
-    private static let shadowTexture: SKTexture = {
+    static let shadowTexture: SKTexture = {
         let side = 128
         let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
             let centre = CGPoint(x: side / 2, y: side / 2)
@@ -933,10 +1042,26 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         return sprite
     }
 
+    /// A soft white disc for the dust, drawn once.
+    ///
+    /// The puff was an `SKShapeNode` made fresh on every landing, and a shape
+    /// node is the one thing in the scene that isn't a textured quad: SpriteKit
+    /// builds a path renderer for it on the frame it first draws, and the first
+    /// one of a session — Benny's first landing, the frame the run begins on —
+    /// measured 117 ms in the simulator. A sprite costs nothing the gallop
+    /// doesn't already pay, and is warmed with the rest of the run's art.
+    static let dustTexture: SKTexture = {
+        let side = 32
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
+            context.cgContext.setFillColor(UIColor.white.cgColor)
+            context.cgContext.fillEllipse(in: CGRect(x: 1, y: 1, width: side - 2, height: side - 2))
+        }
+        return SKTexture(image: image)
+    }()
+
     private func puffDust(behind: CGFloat = 20, scale: CGFloat = 1) {
-        let puff = SKShapeNode(circleOfRadius: 6 * scale)
-        puff.fillColor = .white
-        puff.strokeColor = .clear
+        let puff = SKSpriteNode(texture: Self.dustTexture,
+                                size: CGSize(width: 12 * scale, height: 12 * scale))
         puff.alpha = 0.9
         puff.position = CGPoint(
             x: Layout.dogX - behind + CGFloat.random(in: -4...4),
@@ -1044,17 +1169,52 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
 
         let node = makeObstacle(piece, height: height)
+        #if DEBUG
+        note("spawn \(Self.labName(of: piece))")
+        #else
+        note("spawn")
+        #endif
         node.position = CGPoint(x: x, y: Layout.groundTop)
         node.zPosition = 8
         node.name = "obstacle"
         #if DEBUG
+        if labLogsSpawns {
+            let slack = clearanceSlack(piece, height: height, at: gameSpeed)
+            labSpawns.append(LabSpawn(
+                verb: verb == .duck ? "duck" : "jump",
+                piece: Self.labName(of: piece),
+                score: score,
+                speed: Double(gameSpeed),
+                x: Double(x),
+                width: Double(piece.size(height: height).width),
+                height: Double(height),
+                scroll: labScroll,
+                slack: slack.isFinite ? slack : 99,
+                underGap: Double(height * piece.solid.basePerHeight
+                                 - (piece.sink - Layout.dogPlantDepth))
+            ))
+        }
         // What the Hitbox Lab's course bot needs to know to answer it.
         node.userData = NSMutableDictionary(dictionary: [
             "labVerb": verb == .duck ? "duck" : "jump",
             "labPiece": Self.labName(of: piece),
             "labHeight": height,
             "labWidth": piece.size(height: height).width,
+            "labId": Self.labNextId,
+            // Half the solid, which is what Benny actually collides with — the
+            // drawing is wider, and timing a slide against the drawing starts
+            // it earlier than it needs to be and runs it out before the piece
+            // has gone by.
+            "labSolidHalf": piece.solid.reach(height: height, aspect: piece.aspect, dogWidth: 0),
         ])
+        Self.labNextId += 1
+        // The middle of the window this one actually allows, in seconds of
+        // lead — see `clearanceWindow`. The bot jumps on it.
+        if case let .window(earliest, latest) = clearanceWindow(piece, height: height, at: gameSpeed) {
+            node.userData?["labLead"] = -(earliest + latest) / 2
+            node.userData?["labLeadLo"] = -latest
+            node.userData?["labLeadHi"] = -earliest
+        }
         #endif
         addChild(node)
         return Spawned(
@@ -1128,7 +1288,24 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             cliff.position = CGPoint(x: spawnX, y: Layout.groundTop)
             cliff.zPosition = 8
             cliff.name = "obstacle"
+            #if DEBUG
+            cliff.userData = NSMutableDictionary(dictionary: [
+                "labVerb": "cliff", "labPiece": "cliff", "labWidth": gap,
+                "labId": Self.labNextId,
+            ])
+            Self.labNextId += 1
+            #endif
             addChild(cliff)
+            note("spawn cliff")
+            #if DEBUG
+            if labLogsSpawns {
+                labSpawns.append(LabSpawn(
+                    verb: "cliff", piece: "cliff", score: score, speed: Double(gameSpeed),
+                    x: Double(spawnX), width: Double(gap), height: 0, scroll: labScroll,
+                    slack: Double(airtime) - Double(gap) / Double(gameSpeed), underGap: 0
+                ))
+            }
+            #endif
             activeCliff = cliff
             activeCliffGap = gap
             lastCliffScore = score
@@ -1172,6 +1349,15 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             let follower = spawn(.jump, at: Layout.spawnX)
             let separation = pairSeparation(from: lead, to: follower)
             follower.node.position.x = Layout.spawnX + separation
+            #if DEBUG
+            // The audit logged the follower inside `spawn`, where it still
+            // stood on the mark every obstacle starts from. This is where it
+            // actually ends up, and the distance between the two is the whole
+            // point of a pair.
+            if labLogsSpawns, !labSpawns.isEmpty {
+                labSpawns[labSpawns.count - 1].x = Double(Layout.spawnX + separation)
+            }
+            #endif
             // The pair is two obstacles' worth of screen, so the next one waits
             // the extra out rather than landing on the second one's heels.
             obstacleTimer -= separation / gameSpeed
@@ -1283,7 +1469,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// there's no brushwork in there to distort. Stretch is about 1.9x at the
     /// widest.
     private func makeCliffPit(gap: CGFloat) -> [SKNode] {
-        guard let sheet = UIImage(named: "cliff_gap").map(SKTexture.init(image:)) else { return [] }
+        guard let sheet = Cliff.sheet else { return [] }
 
         let capU = Cliff.capPx / Cliff.spritePx
         let capWidth = Cliff.capPx * Cliff.artScale
@@ -1581,7 +1767,15 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             .run { [weak self] in self?.bennyAppears() },
             .animate(with: Array(frames[16...16]), timePerFrame: Intro.lungeFrame),
             .run { [weak self] in self?.handOff() },
-            .animate(with: Array(frames[17...]), timePerFrame: Intro.aloneFrame),
+            // The reach is held until Benny has got clear, and only then does he
+            // dive — see `Intro.reachFrame`. The lunge forward belongs to the
+            // dive: on the reach it was a step after a dog who hadn't yet gone
+            // anywhere, and it closed the very gap the dive needs.
+            .animate(with: Array(frames[17...17]), timePerFrame: Intro.reachFrame),
+            .run { [weak walker] in
+                walker?.run(.moveBy(x: Intro.diveLunge, y: 0, duration: Intro.diveFrame))
+            },
+            .animate(with: Array(frames[18...]), timePerFrame: Intro.diveFrame),
             .wait(forDuration: Intro.hold),
             .run { [weak self] in self?.finishIntro() },
         ]))
@@ -1642,13 +1836,13 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // which nets out as him pulling away — and lands him on the mark he runs
         // from for the rest of the game. Travel only: he is already the size he
         // plays at, and nothing about him changes again.
+        //
+        // Eased at both ends rather than only out. Easing out spent most of the
+        // drift in the first third of a second, before the ground had got going,
+        // so on screen he fell back towards the man he was meant to be leaving.
         let settle = SKAction.moveTo(x: Layout.dogX, duration: Intro.takeoff)
-        settle.timingMode = .easeOut
+        settle.timingMode = .easeInEaseOut
         dog.run(settle)
-
-        // The man gets a step or two after him before the fight goes out of it.
-        intro?.childNode(withName: "walker")?
-            .run(.moveBy(x: 24, y: 0, duration: Intro.aloneFrame * 2))
 
         // And the rabbit, who has been sitting on the mark waiting for exactly
         // this, breaks. He is peeled off the stage first — see below — so his
@@ -1708,10 +1902,22 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func finishIntro() {
         guard isIntro else { return }
         isIntro = false
-        introRidesAlong = false
+        note("intro finished")
 
-        intro?.removeFromParent()
-        intro = nil
+        // The man is not cut with the clip. Once the handoff has happened the
+        // drawing has no dog left in it — only him, reaching or diving — and he
+        // is already riding the turf out of shot, so he is left to finish doing
+        // that: `update` keeps carrying him and takes him down once he is past
+        // the left edge. Cutting him here blinked him out mid-dive, in plain
+        // view, on the frame the score came up.
+        //
+        // Before the handoff it is still a cut, and has to be. The drawing has
+        // Benny in it until then, and the real one is about to be put on his
+        // mark below — left standing, it would be two dogs.
+        if !introRidesAlong {
+            intro?.removeFromParent()
+            intro = nil
+        }
         introRabbit = nil
 
         removeAction(forKey: "worldScroll")
@@ -1755,6 +1961,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// The Hitbox Lab's frame clock — see `HitboxLab`. After physics, before render.
     override func didFinishUpdate() {
         HitboxLab.shared?.tick()
+        autoplayTick()
     }
     #endif
 
@@ -1762,6 +1969,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         guard !isGameOver else { return }
 
         if lastUpdateTime == 0 { lastUpdateTime = currentTime }
+        logHitch(since: lastUpdateTime, now: currentTime)
         // Clamped so a stall — backgrounding, a slow first frame — can't advance
         // the spawner by a huge step and dump a wall of obstacles at once.
         let delta = min(currentTime - lastUpdateTime, 1.0 / 30)
@@ -1791,9 +1999,23 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // The man is pinned to the turf rather than given a slide of his own, so
         // that when the world does start moving he can't moonwalk against it.
         let step = gameSpeed * worldScroll * CGFloat(delta)
+        #if DEBUG
+        if labLogsSpawns { labScroll += Double(step) }
+        #endif
         scrollLand(by: step)
         if introRidesAlong {
             intro?.position.x -= step
+            // He outlives the clip — see `finishIntro` — so this is where he is
+            // finally taken down: once the furthest right the drawing reaches
+            // has gone past the left edge of the scene, which is at or beyond
+            // the edge of anything the screen shows.
+            if let stage = intro,
+               let walker = stage.childNode(withName: "walker") as? SKSpriteNode,
+               stage.position.x + walker.frame.maxX < 0 {
+                stage.removeFromParent()
+                intro = nil
+                introRidesAlong = false
+            }
         } else if isIntro {
             // The rabbit is out in the world rather than part of the shot, so he
             // is walked by the same step the grass is: whatever the scroll does,
@@ -1931,6 +2153,55 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         scoreClearedObstacles()
     }
 
+    // MARK: - Hitch log
+
+    /// The last thing worth naming that the game did, and when — so a hitch
+    /// can be read as "40 ms after the first landing". Free to call: it is a
+    /// tuple assignment when the log is off.
+    func note(_ what: String) {
+        lastNote = (what, ProcessInfo.processInfo.systemUptime)
+        if Probe.isOn { print(String(format: "NOTE  t=%.1fs  %@  (score %d)", Probe.now, what, score)) }
+    }
+    private var lastNote: (what: String, at: TimeInterval) = ("launch", ProcessInfo.processInfo.systemUptime)
+
+    /// A frame that took this long or longer gets a line. Three frames' worth
+    /// at 60 Hz — short enough to catch what a player calls a stutter, long
+    /// enough that an ordinary busy frame doesn't fill the log.
+    private static let hitchThreshold: TimeInterval = 0.05
+
+    /// What the game was doing when a frame ran long, so "it sometimes pauses"
+    /// can be read back as "it paused at the first swingset" or "on the second
+    /// cliff". The gap is measured between `update`s, which is the only clock
+    /// the scene has: a long frame shows up as the gap before the next one.
+    private func logHitch(since last: TimeInterval, now: TimeInterval) {
+        guard Probe.isOn, last > 0 else { return }
+        let gap = now - last
+        guard gap >= Self.hitchThreshold else { return }
+        let sinceNote = (ProcessInfo.processInfo.systemUptime - lastNote.at) * 1000
+
+        var doing: [String] = []
+        if !hasStarted { doing.append("title") }
+        if isIntro { doing.append("intro") }
+        if isSliding { doing.append("sliding") }
+        else if hasStarted, !isOnGround { doing.append("airborne") }
+        if activeCliff != nil { doing.append("cliff") }
+        if launchIncoming { doing.append("dog house incoming") }
+        if isLaunching { doing.append("launch clip") }
+        if isFlying { doing.append("flying") }
+        var kinds: [String] = []
+        enumerateChildNodes(withName: "obstacle") { node, _ in
+            kinds.append(node.userData?["labPiece"] as? String ?? "obstacle")
+        }
+        let ready = [GameScene.ArtWarmer.Stage.run, .launch, .flight]
+            .filter { GameScene.ArtWarmer.isReady($0) }
+        print(String(format: "HITCH t=%.1fs  %.0f ms  score %d  %@  %.0f ms after %@  on screen: %@  art ready: %@",
+                     Probe.now, gap * 1000, score,
+                     doing.isEmpty ? "running" : doing.joined(separator: ", "),
+                     sinceNote, lastNote.what,
+                     kinds.isEmpty ? "nothing" : kinds.joined(separator: ", "),
+                     ready.isEmpty ? "none" : ready.map { "\($0)" }.joined(separator: " ")))
+    }
+
     /// Walks the painted land left, wrapping each repeat round behind the other
     /// as it leaves.
     private func scrollLand(by distance: CGFloat) {
@@ -1968,6 +2239,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             self.onScoreChange?(self.score)
         }
 
+        // The clip's art, well before the clip. `warm` is a no-op after the
+        // first call, so asking every frame from here on costs nothing.
+        if score >= Launch.trigger - Launch.warmAhead { ArtWarmer.warm(.launch) }
+
         // The end of the running, and the only place it can be: this is where
         // the score changes. `>=` rather than `==` because two obstacles can
         // clear in one frame and the exact number would be stepped over.
@@ -1980,6 +2255,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             hasLaunched = true
             launchPending = true
             holdBackDogHouse()
+            // The flight's art has the brake and the whole launch clip to land in.
+            ArtWarmer.warm(.flight)
         }
     }
 
@@ -2595,6 +2872,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             // wipe the slide a frame or two after it started — which is exactly
             // what made the slide impossible to see.
             if !isGameOver, !isSliding {
+                note("landing")
                 squash(xScale: 1.2, yScale: 0.8)
                 puffDust()
                 // Only if he was actually in the air. A contact also arrives the
@@ -2615,6 +2893,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         }
 
         if categories == (PhysicsCategory.dog | PhysicsCategory.obstacle) {
+            #if DEBUG
+            let hit = [contact.bodyA.node, contact.bodyB.node].compactMap { $0 }.first { $0.name == "obstacle" }
+            note("crash into \((hit?.userData?["labPiece"] as? String) ?? "obstacle")")
+            #endif
             endGame()
         }
     }
@@ -2662,6 +2944,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func endGame(crashed: Bool = true, finale: Bool = false) {
         guard !isGameOver else { return }
         isGameOver = true
+        note("game over")
         physicsWorld.speed = 0
         scenery.isPaused = true
         // He is still flying when the phase runs out, and a frozen scene with
@@ -2799,6 +3082,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func restart() {
+        note("retry")
         removeAllChildren()
         removeAllActions()
 
@@ -2862,6 +3146,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 extension GameScene {
     func labWillBuild(in view: SKView) {
         if HitboxLab.showPhysics { view.showsPhysics = true }
+        if HitboxLab.showStats {
+            view.showsFPS = true
+            view.showsDrawCount = true
+            view.showsNodeCount = true
+        }
         guard HitboxLab.configure(scene: self) != nil else { return }
         // Straight into a run: no title clip, nothing spawning on its own.
         hasStarted = true
@@ -2906,6 +3195,63 @@ extension GameScene {
         return named.first { $0.1.texture === piece.texture }?.0 ?? "?"
     }
     func labTapToRetry() { restart() }
+
+    // MARK: Autoplay
+
+    /// `-AutoPlay` in the scheme's arguments: the game plays itself. `GameView`
+    /// taps Play, and from the clip on this jumps and slides by a crude rule
+    /// and retries after a crash, so a whole opening — title, clip, first
+    /// jump, first landing, first slide, first crash, retry — can be watched
+    /// for hitches in the simulator with nobody at the screen. Crude on
+    /// purpose: a crash now and then is part of what's being watched.
+    static let autoplays = ProcessInfo.processInfo.arguments.contains("-AutoPlay")
+    private static var autoplayFramesDown = 0
+
+    func autoplayTick() {
+        guard Self.autoplays else { return }
+        if isGameOver {
+            Self.autoplayFramesDown += 1
+            if Self.autoplayFramesDown >= 60 {
+                Self.autoplayFramesDown = 0
+                restart()
+            }
+            return
+        }
+        guard hasStarted, !isIntro, !isLaunching, !isFlying, isOnGround, !isSliding else { return }
+
+        var nearest: (ahead: CGFloat, half: CGFloat, verb: String)?
+        enumerateChildNodes(withName: "obstacle") { node, _ in
+            let ahead = node.position.x - Layout.dogX
+            guard ahead > 0, ahead < (nearest?.ahead ?? .infinity) else { return }
+            let width = (node.userData?["labWidth"] as? CGFloat) ?? 60
+            nearest = (ahead, width / 2, (node.userData?["labVerb"] as? String) ?? "jump")
+        }
+        if let cliff = activeCliff {
+            let ahead = cliff.position.x - Layout.dogX
+            if ahead > 0, ahead < (nearest?.ahead ?? .infinity) {
+                nearest = (ahead, activeCliffGap / 2, "jump")
+            }
+        }
+        guard let target = nearest else { return }
+        let gap = target.ahead - target.half - Layout.dogSize.width / 2
+        if target.verb == "duck" {
+            if gap < 60 {
+                Probe.mark(String(format: "autoplay slide  gap %.0f", gap))
+                slide()
+            }
+            return
+        }
+        // Take off so that the far edge is cleared with a little of the arc to
+        // spare: a jump covers `gameSpeed * airtime`, and his tail trails the
+        // canvas centre by about half his width. Failing that — a prop too wide
+        // for the arc from here — go anyway before the nose reaches it.
+        let farEdge = target.ahead + target.half + Layout.dogSize.width / 2
+        if farEdge <= 0.92 * gameSpeed * airtime || gap < 25 {
+            Probe.mark(String(format: "autoplay jump  gap %.0f  far edge %.0f  jump covers %.0f",
+                              gap, farEdge, gameSpeed * airtime))
+            jump()
+        }
+    }
     func labJump() { jump() }
     func labSlide() { slide() }
 

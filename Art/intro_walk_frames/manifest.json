@@ -1,0 +1,335 @@
+{
+  "frames": [
+    {
+      "name": "intro_walk_0.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        112,
+        115,
+        421,
+        453
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_1.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        120,
+        116,
+        428,
+        452
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_2.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        119,
+        116,
+        429,
+        453
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_3.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        122,
+        117,
+        431,
+        453
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_4.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        117,
+        117,
+        442,
+        453
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_5.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        111,
+        116,
+        444,
+        453
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_6.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        114,
+        112,
+        450,
+        452
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_7.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        115,
+        113,
+        452,
+        454
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_8.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        111,
+        112,
+        458,
+        452
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_9.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        109,
+        113,
+        473,
+        453
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_10.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        127,
+        115,
+        471,
+        453
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_11.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        136,
+        117,
+        476,
+        452
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_12.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        144,
+        116,
+        437,
+        452
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_13.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        137,
+        121,
+        410,
+        453
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_14.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        131,
+        125,
+        492,
+        452
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_15.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        118,
+        123,
+        506,
+        452
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_16.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        118,
+        127,
+        514,
+        452
+      ],
+      "alignment": {
+        "scaled": false,
+        "x": 0,
+        "y": 0,
+        "scale": 1.0
+      }
+    },
+    {
+      "name": "intro_walk_17.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        117,
+        129,
+        431,
+        452
+      ],
+      "alignment": {
+        "scaled": true,
+        "x": 117,
+        "y": 129,
+        "scale": 0.42003
+      }
+    },
+    {
+      "name": "intro_walk_18.png",
+      "width": 640,
+      "height": 480,
+      "visible_bounds": [
+        86,
+        129,
+        522,
+        452
+      ],
+      "alignment": {
+        "scaled": true,
+        "x": 86,
+        "y": 129,
+        "scale": 0.38683
+      }
+    }
+  ],
+  "frame_size": {
+    "width": 640,
+    "height": 480
+  },
+  "background": "transparent (RGBA)",
+  "frame_order": "intro_walk_0.png ... intro_walk_18.png",
+  "origin_alignment": "common 640x480 canvas and approximate 452px foot baseline",
+  "notes": "Use texture atlas frames without auto trimming if fixed-size anchor/pivot alignment is desired; SpriteKit may trim atlas transparency unless disabled or compensating coordinates are used."
+}

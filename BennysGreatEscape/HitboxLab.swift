@@ -272,6 +272,10 @@ final class HitboxLab {
     }
     static var showPhysics: Bool { arguments.contains("-ShowPhysics") || arguments.contains("-HitboxLab") }
 
+    /// SpriteKit's own frame rate, draw count and node count in the corner.
+    /// `-ShowStats` in the scheme's arguments, for watching a run on a phone.
+    static var showStats: Bool { arguments.contains("-ShowStats") }
+
     /// Creates the lab if the launch arguments ask for it.
     static func configure(scene: GameScene) -> HitboxLab? {
         if let shared { shared.scene = scene; return shared }
@@ -383,6 +387,89 @@ final class HitboxLab {
         return false
     }
 
+    // MARK: Whole courses, at volume
+
+    /// Plays complete runs through the game's own spawner and scorer, as many
+    /// as asked for, and writes down every obstacle each one stood up.
+    ///
+    /// No rendering and no physics: the view is paused and `update` is called
+    /// with a clock of our own, sixty synthetic frames to the second, so a
+    /// course that takes a minute and a half to play takes a few milliseconds
+    /// to generate. That is what makes a thousand of them possible. The cost is
+    /// that Benny does not actually run — nothing here says a jump connects,
+    /// which is what `C-SEED` and the rest of the catalogue are for. What it
+    /// does say is what the spawner *asked* of him: how much timing each
+    /// obstacle leaves, how much room each duck piece leaves under it, and how
+    /// much ground separates one from the next.
+    ///
+    ///     -HitboxLab courses -LabCourses 1000 -LabScore 60
+    ///
+    /// `-LabFirstSeed` moves the block of seeds, so a second thousand need not
+    /// repeat the first.
+    func auditCourses() async {
+        guard let scene else { return }
+        let count = Int(HitboxLab.argument("-LabCourses") ?? "") ?? 100
+        let target = Int(HitboxLab.argument("-LabScore") ?? "") ?? 50
+        let first = UInt64(HitboxLab.argument("-LabFirstSeed") ?? "") ?? 1
+
+        // Paused, so SpriteKit stops driving `update` with the wall clock and
+        // ours is the only one stepping the world.
+        let view = scene.view
+        view?.isPaused = true
+        scene.labLogsSpawns = true
+        defer {
+            scene.labLogsSpawns = false
+            scene.labSpawns = []
+            view?.isPaused = false
+        }
+
+        let started = CACurrentMediaTime()
+        for index in 0..<count {
+            let seed = first + UInt64(index)
+            if index % 50 == 0 {
+                status("course \(index + 1)/\(count) seed \(seed)")
+            }
+            scene.labRestart()
+            scene.labSeedSpawner(seed)
+            scene.labSpawns = []
+            scene.labScroll = 0
+
+            var clock: TimeInterval = 0
+            let step: TimeInterval = 1.0 / 60
+            var frames = 0
+            // Ten minutes of game time. A course to fifty takes about ninety
+            // seconds; this only ever catches a spawner that has stopped
+            // spawning, which is itself the thing worth hearing about.
+            let limit = 60 * 60 * 10
+            while scene.score < target && frames < limit {
+                clock += step
+                frames += 1
+                scene.update(clock)
+            }
+            append(CourseRecord(
+                seed: seed,
+                score: scene.score,
+                frames: frames,
+                stalled: scene.score < target,
+                spawns: scene.labSpawns
+            ), to: "courses.jsonl")
+            // The audit owns the main actor for as long as it runs; this hands
+            // it back between courses so the app stays alive and the status
+            // file keeps moving.
+            await Task.yield()
+        }
+        let took = CACurrentMediaTime() - started
+        status(String(format: "%d courses in %.1fs", count, took))
+    }
+
+    struct CourseRecord: Codable {
+        var seed: UInt64
+        var score: Int
+        var frames: Int
+        var stalled: Bool
+        var spawns: [GameScene.LabSpawn]
+    }
+
     // MARK: Output
 
     private func append(_ line: some Encodable, to file: String) {
@@ -411,6 +498,7 @@ final class HitboxLab {
     func runAll() async {
         Music.shared.isEnabled = false
         Sfx.shared.isEnabled = false
+        Leaderboard.shared.isEnabled = false
         for name in ["results.jsonl", "sweep.jsonl", "DONE"] where mode != "cases" || name != "sweep.jsonl" {
             try? FileManager.default.removeItem(at: out.appendingPathComponent(name))
         }
@@ -438,6 +526,15 @@ final class HitboxLab {
         droppedFrames = 0
         longestFrame = 0
 
+        if mode == "courses" {
+            await auditCourses()
+            writeDeviceReport()
+            UIApplication.shared.isIdleTimerDisabled = false
+            status("done")
+            try? "done\n".data(using: .utf8)?.write(to: out.appendingPathComponent("DONE"))
+            print("LAB DONE")
+            return
+        }
         if mode == "sweep" || mode == "all" { await runSweeps() }
         if mode == "cases" || mode == "all" {
             let cases = HitboxLab.catalogue().filter { selected($0.id) }
@@ -618,9 +715,33 @@ final class HitboxLab {
             scene.labSeedSpawner(nil)
         }
 
-        let jumpLead: CGFloat = 0.47, slideLead: CGFloat = 0.54
+        // A jump is taken on the middle of the window the obstacle itself
+        // allows — stamped on every spawn by `GameScene.clearanceWindow`, so
+        // the bot's timing follows the game's own arithmetic rather than a
+        // lead chosen by hand. `jumpLead` is only the fallback for an obstacle
+        // that carries no window.
+        let jumpLead: CGFloat = 0.47
         let cliffLead = scene.labAirtime / 2
-        var acted = Set<ObjectIdentifier>()
+        // A slide is timed from the piece's near edge, not its centre.
+        //
+        // A bench is about 170pt across, so its leading edge reaches Benny 85pt
+        // before its middle does; a lead measured to the middle has him already
+        // inside the thing when the slide finally fires. That, and not the
+        // sliding itself, is what the bot kept dying of on benches and
+        // swingsets. A slide is also held open by distance rather than time, so
+        // at speed it can end before a wide piece has finished going past —
+        // hence the re-slide below, which is what a player does.
+        // Late on purpose. The slide is held open for a fixed distance, so the
+        // later it starts the more of the piece it covers; it only has to be
+        // down before Benny's nose reaches the solid.
+        let slideLead: CGFloat = 0.06
+        let dogHalf = GameScene.Layout.dogSize.width * GameScene.DogArt.bodyWidthFraction / 2
+        // Keyed by the obstacle's own number rather than its address — see
+        // `GameScene.labNextId`.
+        var acted = Set<Int>()
+        // What the bot did about each obstacle, so a hit can say whether it
+        // was missed outright or merely mistimed.
+        var answeredWith: [Int: String] = [:]
         var counts: [String: Int] = [:]
         var failures: [String] = []
         var notes: [String] = []
@@ -628,6 +749,8 @@ final class HitboxLab {
         var topSpeed: CGFloat = 0
         var frame = 0
         let limit = frames(60 * 240)
+
+        func labIdOf(_ node: SKNode) -> Int { (node.userData?["labId"] as? Int) ?? -1 }
 
         func describe(_ node: SKNode) -> String {
             if node === scene.labActiveCliff { return "cliff" }
@@ -639,7 +762,13 @@ final class HitboxLab {
             frame += 1
             let speed = scene.labSpeed
             topSpeed = max(topSpeed, speed)
-            let obstacles = scene.labObstacles
+            // Nearest first. The scene hands them over in the order they were
+            // stood up, which is not the order they arrive in: a pair's
+            // follower is placed further down the turf than the mark, so an
+            // obstacle spawned after it can still reach Benny first. Taking
+            // them in scene order let that nearer one sit unanswered behind a
+            // pair while the bot waited on the farther piece.
+            let obstacles = scene.labObstacles.sorted { $0.position.x < $1.position.x }
 
             if scene.labGameOver {
                 failures.append("fell or crashed at score \(scene.score), \(Int(speed)) pt/s")
@@ -648,7 +777,10 @@ final class HitboxLab {
             if pendingHit {
                 pendingHit = false
                 let nearest = obstacles.min { abs($0.position.x - dogX) < abs($1.position.x - dogX) }
-                failures.append("hit \(nearest.map(describe) ?? "?") at score \(scene.score), \(Int(speed)) pt/s, pose \(scene.labPose)")
+                let id = nearest.map(labIdOf) ?? -99
+                let how = answeredWith[id] ?? "never answered"
+                let rel = nearest.map { $0.position.x - dogX } ?? 0
+                failures.append("hit \(nearest.map(describe) ?? "?") #\(id) at \(Int(rel))pt, score \(scene.score), \(Int(speed)) pt/s, pose \(scene.labPose), \(how); seen \(acted.sorted().suffix(4).map(String.init).joined(separator: ","))")
                 if shots.count < 12, let box = scene.labProbeBox() {
                     let sample = LabSample(frame: frame, pose: scene.labPose,
                                            paw: Double(scene.labPawY - GameScene.Layout.dogGroundLine),
@@ -658,28 +790,72 @@ final class HitboxLab {
                 }
             }
 
-            // The nearest obstacle not yet answered.
-            guard let next = obstacles.first(where: { !acted.contains(ObjectIdentifier($0)) && $0.position.x > dogX - 40 }) else { continue }
+            // The nearest obstacle still ahead. A duck piece stays in play
+            // until its back edge is behind Benny, so a slide that ended early
+            // can be taken again; everything else is answered once.
+            func half(_ node: SKNode) -> CGFloat { ((node.userData?["labWidth"] as? CGFloat) ?? 0) / 2 }
+            // The solid where there is one, falling back to the drawing.
+            func solidHalf(_ node: SKNode) -> CGFloat {
+                (node.userData?["labSolidHalf"] as? CGFloat) ?? half(node)
+            }
+            func labId(_ node: SKNode) -> Int { (node.userData?["labId"] as? Int) ?? -1 }
+            func answered(_ node: SKNode) -> Bool {
+                guard acted.contains(labId(node)) else { return false }
+                guard (node.userData?["labVerb"] as? String) == "duck" else { return true }
+                // Still answered while he is down; only a stand-up with the
+                // piece still alongside puts it back in play.
+                return scene.labSliding || node.position.x + half(node) < dogX - 34
+            }
+            guard let next = obstacles.first(where: { !answered($0) && $0.position.x + half($0) > dogX - 34 }) else { continue }
             let isCliff = next === scene.labActiveCliff
             let verb = isCliff ? "cliff" : ((next.userData?["labVerb"] as? String) ?? "jump")
-            let lead = verb == "duck" ? slideLead : (isCliff ? cliffLead : jumpLead)
             let rel = next.position.x - dogX
-            guard rel <= speed * lead else { continue }
+            // For a duck piece the distance that matters is Benny's nose to the
+            // piece's near edge; for a jump the window is already measured
+            // against the whole solid, so its own centre is the right mark.
+            let approach = verb == "duck" ? rel - solidHalf(next) - dogHalf : rel
+            let lead: CGFloat
+            if verb == "duck" {
+                lead = slideLead
+            } else if isCliff {
+                lead = cliffLead
+            } else if let lo = next.userData?["labLeadLo"] as? CGFloat,
+                      let hi = next.userData?["labLeadHi"] as? CGFloat {
+                // Anywhere between `lo` and `hi` clears it. The middle is the
+                // safest place to be, but the earlier the jump the earlier the
+                // landing — and with something close behind, ground time to
+                // answer the next one matters more than margin on this one.
+                // Taking the middle every time was the last way the bot could
+                // still be caught out: airborne, with the next obstacle's own
+                // window already going past.
+                let crowded = obstacles.contains { other in
+                    other !== next && other.position.x > next.position.x
+                        && other.position.x - next.position.x < speed * 1.4
+                }
+                lead = lo + (hi - lo) * (crowded ? 0.78 : 0.5)
+            } else {
+                lead = jumpLead
+            }
+            guard approach <= speed * lead else { continue }
             if verb != "duck" {
                 let underBench = obstacles.contains { o in
                     o !== next && (o.userData?["labVerb"] as? String) == "duck"
                         && o.position.x < next.position.x
                         && o.position.x + ((o.userData?["labWidth"] as? CGFloat) ?? 0) / 2 > dogX - 34
                 }
-                if underBench && rel > speed * 0.30 { continue }
+                if underBench && approach > speed * 0.30 { continue }
             }
             let ready = scene.labGrounded && (verb != "duck" || !scene.labSliding)
             if !ready {
-                if rel > speed * 0.30 { continue }
+                if approach > speed * 0.30 { continue }
                 notes.append("no ground time to answer \(describe(next)) at score \(scene.score)")
             }
-            acted.insert(ObjectIdentifier(next))
-            counts[describe(next), default: 0] += 1
+            let fresh = acted.insert(labId(next)).inserted
+            if fresh { counts[describe(next), default: 0] += 1 }
+            answeredWith[labId(next)] = String(
+                format: "%@ at %.0fpt (%.2fs lead, wanted %.2f), grounded %@, sliding %@",
+                verb, rel, rel / max(speed, 1), lead,
+                scene.labGrounded ? "y" : "n", scene.labSliding ? "y" : "n")
             if verb == "duck" { scene.labSlide() } else { scene.labJump() }
         }
 

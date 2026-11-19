@@ -8,8 +8,11 @@
 //  the asset catalogue.
 //
 //      swift Art/CutDogFrames.swift
+//      swift Art/CutDogFrames.swift --full    # ship the frames at full size
 //
 //  Run from the repository root. Rerunning overwrites the assets in place.
+//  The frames are measured at the sheets' own size and shipped smaller — see
+//  `shippedWidth` — into one sprite atlas per clip.
 //
 //  Four things make this more than a copy.
 //
@@ -127,12 +130,59 @@ private func write(_ bitmap: Bitmap, to path: String) {
     guard CGImageDestinationFinalize(destination) else { fatalError("can't write \(path)") }
 }
 
+/// The width Benny ships at, in pixels. `nil` keeps the cut frames at full size.
+///
+/// The sheets are drawn at 1259 x 897 and the game shows him about 350 px wide
+/// on the largest phone. Shipped as drawn, every one of the 28 frames cost four
+/// times the memory and decode time it needed — 4.3 MB each, 129 MB the set —
+/// and the first jump of a session decoded ten of them on the main thread, one
+/// per pose, as the arc played. 640 keeps a margin of nearly 2x over anything a
+/// current screen draws, so nothing softens at the edges, and takes the set to
+/// 33 MB.
+///
+/// Everything measured below is measured on the full canvas before this is
+/// applied, and printed as fractions, so nothing in `DogArt` depends on it.
+/// Pass `--full` to ship the originals; `Art/benny_fullres/` holds a copy of
+/// them as well, with the rollback written out.
+private let shippedWidth: Int? = CommandLine.arguments.contains("--full") ? nil : 640
+
+/// `bitmap`, resampled to `shippedWidth` if there is one. Area-averaging, which
+/// is what `.high` comes to on a downscale: every source pixel contributes, so
+/// the outline keeps its weight instead of dropping rows.
+private func shipped(_ bitmap: Bitmap) -> Bitmap {
+    guard let width = shippedWidth, width < bitmap.width else { return bitmap }
+    let height = Int((Double(bitmap.height) * Double(width) / Double(bitmap.width)).rounded())
+    var source = bitmap.pixels
+    let image: CGImage = source.withUnsafeMutableBytes { buffer in
+        CGContext(
+            data: buffer.baseAddress, width: bitmap.width, height: bitmap.height,
+            bitsPerComponent: 8, bytesPerRow: bitmap.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!.makeImage()!
+    }
+    var small = Bitmap(width: width, height: height)
+    small.pixels.withUnsafeMutableBytes { buffer in
+        let context = CGContext(
+            data: buffer.baseAddress, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    }
+    return small
+}
+
 private func install(_ frame: Bitmap, named name: String) {
-    // benny_run_3 -> run, benny_jump_0 -> jump, benny_slide_7 -> slide.
-    let clip = name.split(separator: "_")[1]
-    let directory = "BennysGreatEscape/Assets.xcassets/phase_one/gameplay/benny/\(clip)/\(name).imageset"
+    // benny_run_3 -> benny_run.spriteatlas, and so on: one atlas per clip, so
+    // the game can hand each animation to the GPU as a single texture — see
+    // `GameScene.numberedTextures`.
+    let clip = name[..<name.lastIndex(of: "_")!]
+    let directory = "BennysGreatEscape/Assets.xcassets/phase_one/gameplay/benny/\(clip).spriteatlas/\(name).imageset"
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
-    write(frame, to: "\(directory)/\(name).png")
+    write(shipped(frame), to: "\(directory)/\(name).png")
     try! """
     {
       "images" : [
@@ -412,7 +462,24 @@ for clip in clips {
 // assumed — the jump reaches highest and the slide widest, and neither is
 // knowable before the offsets are worked out.
 private let left = placed.map { $0.box.left + $0.dx }.min()!
-private let right = placed.map { $0.box.right + $0.dx }.max()!
+
+/// The canvas never closes up past the width it had when `Layout.dogWidth` and
+/// the Hitbox Lab's baseline were set.
+///
+/// The width is set by whichever pose reaches furthest, and until Nov 2026 that
+/// was the old slide's final stretch, 17px past anything the gallop or the jump
+/// reaches. The redrawn slide is more compact, and without this the canvas
+/// closed up by those 17px on the right — which moved the centre of every run
+/// and jump frame 8px to the left of where it had been and, since the game
+/// stands Benny by the centre of his canvas, moved his body on screen by that
+/// much. Every knife-edge jump case in the lab flipped with it.
+///
+/// So the right edge is held where it was: the run and jump come out as they
+/// did, and a narrower slide changes the slide and nothing else. Only the right
+/// edge, and only a floor — the left is the gallop's tail and is measured as
+/// ever, and a pose that reaches further than this still grows the canvas.
+private let minimumWidth = 1259
+private let right = max(placed.map { $0.box.right + $0.dx }.max()!, left + minimumWidth - 1)
 private let top = placed.map { $0.box.top + $0.dy }.min()!
 private let bottom = placed.map { $0.box.bottom + $0.dy }.max()!
 private let canvas = (width: right - left + 1, height: bottom - top + 1)
@@ -534,4 +601,5 @@ paste into DogArt:
 
 `aspect` is read off the texture at runtime, so it follows the canvas with
 nothing to paste: \(canvas.width)/\(canvas.height) = \(String(format: "%.3f", Double(canvas.width) / Double(canvas.height))), against 1.097 before.
+Shipped at \(shippedWidth.map { "\($0) px wide" } ?? "full size").
 """)

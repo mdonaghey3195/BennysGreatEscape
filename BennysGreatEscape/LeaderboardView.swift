@@ -85,12 +85,17 @@ struct LeaderboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
         .task { await load() }
+        .onChange(of: leaderboard.isAuthenticated) { _, _ in Task { await load() } }
     }
 
     private static let log = Logger(subsystem: "donaghey.BennysGreatEscape", category: "leaderboard")
 
     private func load() async {
         guard leaderboard.isAuthenticated else {
+            // Signing in is deferred to here (or the first game over) so it
+            // can't stall the opening — see `GameView`. If Game Center has yet
+            // to be asked, ask now; `onChange` below reloads when it answers.
+            leaderboard.authenticate()
             phase = .signedOut
             return
         }

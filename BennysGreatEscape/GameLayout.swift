@@ -123,6 +123,10 @@ extension GameScene {
         /// fixed size whatever Benny's doing — matching canvas widths would shrink
         /// him, because the gallop poses stretch the canvas without making the dog
         /// any bigger.
+        ///
+        /// Sized against a 1259px canvas, which `Art/CutDogFrames.swift` now
+        /// holds as a floor — see `minimumWidth` there — so a redrawn clip that
+        /// reaches less far can't shrink the canvas under this figure.
         static let dogWidth: CGFloat = 125 * worldScale
 
         /// Height follows the artwork's aspect so Benny is never stretched, and

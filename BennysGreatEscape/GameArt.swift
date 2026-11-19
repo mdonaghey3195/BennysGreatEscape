@@ -28,17 +28,124 @@ extension GameScene {
     /// collected until one is missing — so adding a frame is a pure asset drop with
     /// nothing here to change.
     ///
-    /// Probed with `UIImage(named:)` rather than `SKTexture(imageNamed:)` because
-    /// the latter hands back a placeholder for a missing name instead of nil, so it
+    /// Looked for in a sprite atlas named for the clip first — `benny_run` holds
+    /// `benny_run_0` and up — and among the loose images second. An atlas is one
+    /// texture for the whole clip, handed to the GPU once rather than a frame at
+    /// a time as the animation first plays, and it is what `ArtWarmer` can load
+    /// ahead of time in a single piece. The cutters in `Art/` file every numbered
+    /// clip into one; a set that isn't packed yet still loads the old way.
+    ///
+    /// The atlas is probed through `textureNames`, and the loose images through
+    /// `UIImage(named:)`, rather than either through `SKTexture(imageNamed:)`,
+    /// which hands back a placeholder for a missing name instead of nil and so
     /// can't tell you where the frames stop.
     static func numberedTextures(_ prefix: String) -> [SKTexture] {
         var textures: [SKTexture] = []
         var index = 0
+
+        let atlas = SKTextureAtlas(named: prefix)
+        // Some builds list the names with their extension, some without.
+        let packed = Set(atlas.textureNames.map { ($0 as NSString).deletingPathExtension })
+        if !packed.isEmpty {
+            while packed.contains("\(prefix)_\(index)") {
+                textures.append(atlas.textureNamed("\(prefix)_\(index)"))
+                index += 1
+            }
+            return textures
+        }
+
         while let image = UIImage(named: "\(prefix)_\(index)") {
             textures.append(SKTexture(image: image))
             index += 1
         }
         return textures
+    }
+
+
+    // MARK: - Loading ahead of time
+
+    /// The artwork, decoded and handed to the GPU before the frame that first
+    /// draws it.
+    ///
+    /// Every set in this file is a lazy static: nothing is read from the
+    /// catalogue until the first line that names it runs, and SpriteKit uploads
+    /// a texture on the first frame it is drawn. Left to that, the first jump of
+    /// a session decoded its ten poses on the main thread one at a time as the
+    /// arc played, the first slide did the same with eight, the second bench and
+    /// the first swingset each stalled on their own art, and the dog house at the
+    /// launch score decoded the whole clip in the frame it was staged. Each was a
+    /// pause the player could feel, and each happened once per launch — which is
+    /// "sometimes".
+    ///
+    /// Three stages, warmed as the game approaches them: the run's art while the
+    /// title card is up, the launch clip's a few obstacles before the trigger,
+    /// and the flight's once the launch is on its way. Each is warmed once; the
+    /// statics hold what they load for the life of the process, so a retry or a
+    /// trip to the title costs nothing.
+    ///
+    /// The work is done on a background queue. Touching a static there is what
+    /// runs its initialiser, so the decoding happens off the main thread, and
+    /// `SKTexture.preload` does the upload. If the game reaches a set first it
+    /// simply blocks on the same once-only initialiser, which is no worse than
+    /// what happened before.
+    enum ArtWarmer {
+        enum Stage {
+            /// Benny, the obstacles, the cliff, the backdrop and the opening clip.
+            case run
+            /// The dog house, the roof and the rocket.
+            case launch
+            /// The high sky, the UFO and the standoff.
+            case flight
+        }
+
+        private static var warmed = Set<Stage>()
+        private static var ready = Set<Stage>()
+        private static var waiting: [Stage: [() -> Void]] = [:]
+
+        static func warm(_ stage: Stage) {
+            guard !warmed.contains(stage) else { return }
+            warmed.insert(stage)
+            DispatchQueue.global(qos: .userInitiated).async {
+                SKTexture.preload(textures(for: stage)) {
+                    DispatchQueue.main.async {
+                        ready.insert(stage)
+                        waiting.removeValue(forKey: stage)?.forEach { $0() }
+                    }
+                }
+            }
+        }
+
+        /// Whether a stage's art is decoded and on the GPU. Main thread only.
+        static func isReady(_ stage: Stage) -> Bool { ready.contains(stage) }
+
+        /// Runs `action` on the main thread once `stage` is ready — at once if
+        /// it already is. The title screen holds Play on this, so a run can't
+        /// begin on art that is still loading.
+        static func whenReady(_ stage: Stage, _ action: @escaping () -> Void) {
+            if ready.contains(stage) { action(); return }
+            waiting[stage, default: []].append(action)
+            warm(stage)
+        }
+
+        private static func textures(for stage: Stage) -> [SKTexture] {
+            switch stage {
+            case .run:
+                var all = DogArt.frames + DogArt.jumpFrames + DogArt.slideFrames
+                all += IntroArt.walkFrames + IntroArt.rabbitFrames + IntroArt.grazeFrames
+                let pieces = ObstacleArt.jumps
+                    + [ObstacleArt.bench, ObstacleArt.occupiedBench, ObstacleArt.swingset]
+                all += pieces.flatMap(\.textures)
+                all += [BackdropArt.sheet, Cliff.sheet].compactMap { $0 }
+                all += [GameScene.shadowTexture, GameScene.dustTexture]
+                return all
+            case .launch:
+                return LaunchArt.slideFrames + LaunchArt.roofFrames + LaunchArt.flyFrames
+                    + [LaunchArt.rocket, LaunchArt.houseShut].compactMap { $0 }
+            case .flight:
+                return UfoArt.frames + AngerArt.frames
+                    + [SkyArt.sheet, AngerArt.serious].compactMap { $0 }
+            }
+        }
     }
 
 
@@ -190,18 +297,20 @@ extension GameScene {
     /// The frames of the clip that plays before a run: a man out walking Benny, and
     /// the rabbit that ends it.
     ///
-    /// The fractions are measured off the sheets rather than typed in — they are
-    /// what `Art/SliceIntroSheets.swift` prints when it cuts them, so re-cutting a
-    /// redrawn sheet reprints the numbers to paste back here.
+    /// The fractions are measured off the artwork rather than typed in — they are
+    /// what `Art/SliceIntroSheets.swift` prints when it prepares it, so rerunning
+    /// it over redrawn artwork reprints the numbers to paste back here.
     enum IntroArt {
-        /// Man, leash and dog together in one drawing, all nineteen aligned on the
-        /// man's head so he holds his ground while the dog pulls away from him.
+        /// Man, leash and dog together in one drawing, all nineteen drawn on one
+        /// canvas with the man's head held still, so he holds his ground while the
+        /// dog pulls away from him.
         ///
-        /// They fall into four beats: 0–7 out for a walk, 8–11 Benny leaning into
-        /// the leash, 12–16 the lunge that takes it out of the man's hand, and
-        /// 17–18 the man alone, reaching after him and then diving. From frame
-        /// seventeen the dog isn't drawn at all — that is where the game's own
-        /// Benny takes over — though the slipped leash lying in the grass still is.
+        /// They fall into five beats: 0–8 out for a walk, 9–11 Benny pulling at
+        /// the leash, 12–14 the lunge that takes it out of the man's hand, 15–16
+        /// Benny loose and running, and 17–18 the man alone, reaching after him
+        /// and then diving. From frame seventeen the dog isn't drawn at all — that
+        /// is where the game's own Benny takes over — though the slipped leash
+        /// lying in the grass still is.
         static let walkFrames: [SKTexture] = numberedTextures("intro_walk")
 
         /// A gallop cycle, facing right, the way he runs off.
@@ -223,34 +332,34 @@ extension GameScene {
         /// title card, which is why it is the first frame and not a nibble.
         static var grazeStill: SKTexture? { grazeFrames.first }
 
-        static let walkAspect: CGFloat = 1.646
+        static let walkAspect: CGFloat = 1.184
         static let rabbitAspect: CGFloat = 1.464
         static let grazeAspect: CGFloat = 1.087
 
         /// Where the man's head sits across the drawing — the sprite's anchor, and
         /// so the point that stays put as the frames change under it.
-        static let manCentreXFraction: CGFloat = 0.334
+        static let manCentreXFraction: CGFloat = 0.190
 
-        /// Where his feet are, as a fraction up from the bottom of the canvas. Zero
-        /// on this sheet: every pose is pinned by its own lowest foot, and no frame
-        /// draws anything below the one it is pinned by.
-        static let groundLineFraction: CGFloat = 0.000
+        /// Where his feet are, as a fraction up from the bottom of the canvas. All
+        /// but zero: the frames share one foot baseline, and the canvas is cropped
+        /// to the lowest pixel any of them draws, which is a shoe two rows under it.
+        static let groundLineFraction: CGFloat = 0.006
 
         /// The drawn dog, measured on the handoff frame: how wide he is, and where
         /// he stands. The first sets the whole clip's scale, the second is where
         /// Benny is put when he takes the drawing's place.
-        static let dogWidthFraction: CGFloat = 0.340
-        static let dogCentreXFraction: CGFloat = 0.830
+        static let dogWidthFraction: CGFloat = 0.521
+        static let dogCentreXFraction: CGFloat = 0.738
 
         /// The leftmost the drawing reaches while the man is still on his mark —
         /// his trailing foot at full stride. `Intro.manX` is set against it, which
         /// is the only way to put him as far left as the crop allows without
         /// guessing.
         ///
-        /// Measured over the walk and the lunge only. The dive reaches the canvas
-        /// edge itself, but it plays after the handoff, with the turf already
-        /// carrying him out of shot.
-        static let walkLeftFraction: CGFloat = 0.188
+        /// Measured over the walk and the lunge only, which on these frames is
+        /// also where the canvas edge is: nothing after the handoff reaches further
+        /// left than his trailing foot does mid-walk.
+        static let walkLeftFraction: CGFloat = 0.000
 
         /// How much of the rabbit's canvas the still pose actually fills.
         ///

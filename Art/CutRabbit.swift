@@ -118,8 +118,18 @@ private func write(_ bitmap: Bitmap, to path: String) {
     guard CGImageDestinationFinalize(destination) else { fatalError("can't write \(path)") }
 }
 
+/// Where a numbered frame is filed: `%(example)s` goes into `%(atlas)s.spriteatlas/`, so
+/// the game can hand the whole clip to the GPU as one texture — see
+/// `GameScene.numberedTextures`. A one-off like `%(loose)s` stays loose.
+private func atlasFolder(for name: String) -> String {
+    guard let underscore = name.lastIndex(of: "_") else { return "" }
+    let number = name[name.index(after: underscore)...]
+    guard !number.isEmpty, number.allSatisfy(\.isNumber) else { return "" }
+    return "\(name[..<underscore]).spriteatlas/"
+}
+
 private func install(_ frame: Bitmap, named name: String) {
-    let directory = "BennysGreatEscape/Assets.xcassets/phase_two/cutscene/standoff/\(name).imageset"
+    let directory = "BennysGreatEscape/Assets.xcassets/phase_two/cutscene/standoff/\(atlasFolder(for: name))\(name).imageset"
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
     write(frame, to: "\(directory)/\(name).png")
     // Matches every other imageset here: one universal representation and no
