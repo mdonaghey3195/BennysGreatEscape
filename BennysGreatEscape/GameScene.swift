@@ -2195,23 +2195,24 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             }
         }
 
-        // The last frame of a dive. Coming down at twice a jump's speed, the box
-        // ends the physics step as much as a whole frame's fall inside the turf,
-        // and being pushed back out of it threw him 16–20pt back into the air —
-        // the Hitbox Lab measured exactly that, against under 6pt for a jump,
-        // and the contact flickering with it cost him the next jump. So on the
-        // frame that would carry him into the turf he is set down a few points
-        // above it at a jump's own landing speed, and the physics lands him the
-        // way it lands every jump. Here, after the cliff check, so a gap that
-        // has just switched the turf off still swallows him.
+        // The last frame of a dive. Left to the physics, a box arriving at twice
+        // a jump's speed ends the step most of a frame's fall inside the turf,
+        // and being pushed back out throws him into the air: 16–20pt in the
+        // Hitbox Lab, against under 6 for a jump, with the contact flickering
+        // on and off and the next jump lost with it. Slowing him to a jump's
+        // speed for that frame still left a 6pt hop and a touchdown eleven
+        // frames late. So on the frame that would carry him into the turf he is
+        // set down on it instead — the full box, paws on the turf, no speed left
+        // to shed — which is the state every landing is put in a frame later
+        // anyway (see the top of `update`). Here, after the cliff check, so a
+        // gap that has just switched the turf off still swallows him.
         if isDiving, ground.physicsBody?.categoryBitMask == PhysicsCategory.ground,
            let body = dog.physicsBody, body.velocity.dy < 0 {
-            let dt = CGFloat(delta)
             let boxFloor = dog.position.y - Layout.dogSize.height * (0.5 - dogBodyLift)
-            let gap = boxFloor - Layout.dogGroundLine
-            if gap <= -body.velocity.dy * dt {
-                dog.position.y -= max(0, gap - launchVelocity * dt / 2)
-                body.velocity = CGVector(dx: 0, dy: -launchVelocity)
+            if boxFloor - Layout.dogGroundLine <= -body.velocity.dy * CGFloat(delta) {
+                wearDogBody(lift: 0)
+                dog.position.y = Layout.dogGroundLine + Layout.dogSize.height / 2
+                dog.physicsBody?.velocity = .zero
             }
         }
 
