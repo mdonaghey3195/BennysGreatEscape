@@ -48,6 +48,18 @@ def good_jump_trace(start=0, landing=None):
     return trace, end
 
 
+def dive_trace(trigger='jump_4', landing=40, after=16):
+    """A jump dived out of on `trigger`: the arc up to that pose, jump_7 held all
+    the way down, touchdown at `landing`, then `after` frames of running."""
+    trace = [frame(0, 'run_0')]
+    for i in range(int(trigger.split('_')[1]) + 1):
+        trace.append(frame(1 + i * 4, f'jump_{i}', paw=60.0, grounded=False, floor=8.0))
+    trace += [frame(f, 'jump_7', paw=30.0, grounded=False, floor=3.0)
+              for f in range(trace[-1]['frame'] + 1, landing)]
+    trace += [frame(f, 'run_0') for f in range(landing, landing + after)]
+    return trace
+
+
 def healthy_run():
     """Every case the invariants need, all well behaved."""
     run = {}
@@ -66,6 +78,17 @@ def healthy_run():
     run['L-6-JUMP-OUT-OF-SLIDE'] = case('L-6-JUMP-OUT-OF-SLIDE', 'DONE', trace=slide)
     run['J-LOG-TOP'] = case('J-LOG-TOP')
     run['J-LOG-LC-H'] = case('J-LOG-LC-H', 'HIT', hitFrame=4)
+    for cid in check.DIVES:
+        trigger = cid.rsplit('-', 1)[1]
+        run[cid] = case(cid, 'DONE', trace=dive_trace(trigger), landingFrame=40, apexes=[120.0])
+    saved = dive_trace(after=0) + [frame(40, 'jump_7'), frame(41, 'slide_1'), frame(42, 'slide_3')]
+    run['L-11-DIVE-THEN-SLIDE'] = case('L-11-DIVE-THEN-SLIDE', 'DONE', trace=saved, landingFrame=40, apexes=[120.0])
+    for o in (0, 1):
+        cid = f'L-12-JUMP-ON-DIVE-LANDING-T+{o}'
+        second, _ = good_jump_trace(40)
+        run[cid] = case(cid, 'DONE', trace=dive_trace(after=0) + second, landingFrame=40, apexes=[120.0, 144.0])
+    run['L-13-DIVE-PAST-LOG'] = case('L-13-DIVE-PAST-LOG', landingFrame=50)
+    run['L-14-DIVE-INTO-CLIFF'] = case('L-14-DIVE-INTO-CLIFF', 'GAMEOVER', hitFrame=40)
     return run
 
 
@@ -146,6 +169,66 @@ class CheckPy(unittest.TestCase):
         run = healthy_run()
         run['J-LOG-TOP']['outcome'] = 'FLAKY'
         self.assertTrue(any('flaky' in f for f in checked(run).failures))
+
+    def test_dive_lands_sooner_than_a_jump(self):
+        run = healthy_run()
+        run['L-10-DIVE-jump_5'].update(trace=dive_trace('jump_5', landing=60), landingFrame=60)
+        self.assertTrue(any('L-10-DIVE-jump_5 lands sooner' in f for f in checked(run).failures))
+
+    def test_dive_holds_its_pose(self):
+        run = healthy_run()
+        next(s for s in run['L-10-DIVE-jump_3']['trace'] if s['frame'] == 25)['pose'] = 'run_2'
+        self.assertTrue(any('holds jump_7' in f for f in checked(run).failures))
+
+    def test_dive_without_its_pose_never_came(self):
+        run = healthy_run()
+        for s in run['L-10-DIVE-jump_1']['trace']:
+            if s['pose'] == 'jump_1':
+                s['pose'] = 'jump_0'
+        self.assertTrue(any('swipe never came' in f for f in checked(run).failures))
+
+    def test_dive_landing_sink_and_double_jump(self):
+        run = healthy_run()
+        next(s for s in run['L-10-DIVE-jump_5']['trace'] if s['frame'] == 41)['paw'] = -8.0
+        self.assertTrue(any('jump_5 sinks' in f for f in checked(run).failures))
+        run = healthy_run()
+        run['L-10-DIVE-jump_1']['apexes'] = [40.0, 144.0]
+        self.assertTrue(any('jump_1 no double jump' in f for f in checked(run).failures))
+
+    def test_saved_slide_plays_on_touchdown(self):
+        run = healthy_run()
+        for s in run['L-11-DIVE-THEN-SLIDE']['trace']:
+            if s['pose'].startswith('slide_'):
+                s['pose'] = 'run_0'
+        self.assertTrue(any('slides on touchdown' in f for f in checked(run).failures))
+
+    def test_jump_out_of_a_dive_goes_full_height(self):
+        run = healthy_run()
+        run['L-12-JUMP-ON-DIVE-LANDING-T+0']['apexes'] = [120.0, 130.0]
+        self.assertTrue(any('full height' in f for f in checked(run).failures))
+        run = healthy_run()
+        next(s for s in run['L-12-JUMP-ON-DIVE-LANDING-T+1']['trace'] if s['pose'] == 'jump_5')['pose'] = 'run_1'
+        self.assertTrue(any('T+1 keeps its jump poses' in f for f in checked(run).failures))
+
+    def test_dive_past_a_log_and_into_a_cliff(self):
+        run = healthy_run()
+        run['L-13-DIVE-PAST-LOG'] = case('L-13-DIVE-PAST-LOG', 'HIT', hitFrame=48, landingFrame=50)
+        self.assertTrue(any('clears it' in f for f in checked(run).failures))
+        run = healthy_run()
+        run['L-13-DIVE-PAST-LOG']['landingFrame'] = 57
+        self.assertTrue(any('before the jump would have landed' in f for f in checked(run).failures))
+        run = healthy_run()
+        run['L-14-DIVE-INTO-CLIFF'] = case('L-14-DIVE-INTO-CLIFF', 'DONE')
+        self.assertTrue(any('ends the run' in f for f in checked(run).failures))
+
+    def test_missing_dive_case_fails_unless_partial(self):
+        run = healthy_run()
+        del run['L-11-DIVE-THEN-SLIDE']
+        del run['L-10-DIVE-jump_7']
+        failures = checked(run).failures
+        self.assertTrue(any(f.startswith('L-11-DIVE-THEN-SLIDE') for f in failures))
+        self.assertTrue(any(f.startswith('L-10-DIVE-jump_7') for f in failures))
+        self.assertEqual(checked(run, partial=True).failures, [])
 
     def test_tier_rules(self):
         run = healthy_run()

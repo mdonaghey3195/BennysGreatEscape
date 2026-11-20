@@ -169,6 +169,21 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// Sliding is a timed action rather than a hold, so it can end itself.
     private var isSliding = false
 
+    /// A swipe down in mid-air: Benny is thrown at the turf rather than left to
+    /// wait out the rest of the arc. The landing it ends in clears it.
+    private var isDiving = false
+
+    /// A swipe down that arrived while a dive was still in the air.
+    ///
+    /// From the top of a jump a dive is over in about a tenth of a second, which
+    /// is quicker than a thumb can lift and swipe again — so a second swipe meant
+    /// for a slide nearly always lands mid-dive, where neither `dive` nor `slide`
+    /// can take it. Dropped, it is exactly the swipe-that-did-nothing the dive
+    /// exists to get rid of, so it is held and played on touchdown. From `update`
+    /// rather than `didBegin`: a slide swaps the body, and replacing a body from
+    /// inside a contact callback re-enters that callback.
+    private var slideQueued = false
+
     /// Reported so the SwiftUI layer can show the "swipe down" hint the first
     /// time a rail actually appears, rather than up front where it means little.
     var onFirstLowObstacle: (() -> Void)?
@@ -570,7 +585,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     // MARK: - Input
 
-    /// Swipe up to jump, swipe down to slide.
+    /// Swipe up to jump, swipe down to slide — or, in the air, to dive.
     ///
     /// The direction is resolved as soon as the finger crosses a small
     /// threshold rather than on lift-off — waiting for touch-up would put about
@@ -623,7 +638,24 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         if dy > 0 {
             jump()
         } else {
+            swipedDown()
+        }
+    }
+
+    /// Down means "get low", wherever he is: a slide on the turf, a dive in the
+    /// air, and — when a second swipe comes in before the dive has landed — a
+    /// slide saved for the touchdown. See `slideQueued`.
+    ///
+    /// Routed here rather than inside `slide`, so `slide` keeps meaning exactly
+    /// one thing and the Hitbox Lab's slide cases, which call it directly, are
+    /// untouched by any of this.
+    private func swipedDown() {
+        if isOnGround {
             slide()
+        } else if isDiving {
+            slideQueued = true
+        } else {
+            dive()
         }
     }
 
@@ -784,6 +816,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func jump() {
+        // The newest swipe wins. One up after a slide was saved for a dive's
+        // landing takes it back, even though the jump itself can't happen until
+        // he is down — mid-air swipes up still never buy a second jump.
+        slideQueued = false
         // Swiping up out of a slide cancels it — standing back up mid-air would
         // otherwise leave the ducked hitbox on while he's clearly upright.
         if isSliding { endSlide() }
@@ -803,6 +839,44 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             body.removeAction(forKey: "gait")
             body.run(jumpArc, withKey: "gait")
         }
+    }
+
+    /// The jump pose a dive wears: `jump_7`, head down and front paws reaching
+    /// for the turf. Already on the sheet, which is why a dive costs no art.
+    private static let divePose = 7
+
+    /// Throws Benny at the turf from anywhere in a jump.
+    ///
+    /// Velocity is set, like the jump's, rather than added to, so a dive is the
+    /// same drop wherever in the arc it starts. Never slower than the fall
+    /// already under way, though: over a cliff's gap he can be falling faster
+    /// than this, and a dive that braked him would be a strange reward.
+    ///
+    /// One drawing, held to the touchdown rather than stepped through. From the
+    /// apex the whole dive is about six frames, too short for a sequence to
+    /// read, and `jump_7` already says it. It replaces the jump arc outright,
+    /// because that arc is timed to a full flight and left running would still
+    /// be drawing him at the apex while he hits the ground.
+    private func dive() {
+        guard !isOnGround, !isDiving, !isSliding, !isGameOver, !isLaunching, !isFlying,
+              DogArt.jumpFrames.indices.contains(Self.divePose) else { return }
+        isDiving = true
+        note("dive")
+
+        if let body = dog.childNode(withName: "body") as? SKSpriteNode {
+            body.removeAction(forKey: "gait")
+            body.texture = DogArt.jumpFrames[Self.divePose]
+        }
+        // The box follows the drawing here as it does through the arc.
+        wearJumpBody(frame: Self.divePose)
+
+        guard let physics = dog.physicsBody else { return }
+        // Twice as fast as anything else in the game moves, at a ground that is
+        // a line with no thickness. The precise test keeps the touchdown on the
+        // turf rather than a frame's travel through it. For the fall alone:
+        // `update` switches it off again once he is down.
+        physics.usesPreciseCollisionDetection = true
+        physics.velocity = CGVector(dx: 0, dy: min(physics.velocity.dy, -Layout.diveSpeed * launchVelocity))
     }
 
     /// `v = sqrt(2·a·h)`. SpriteKit gravity is in m/s² against a 150 points-per-
@@ -1990,6 +2064,19 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             if dog.position.y < standing { dog.position.y = standing }
         }
 
+        // Down from a dive. The precise collision test was for the fall alone,
+        // and a slide saved during it plays now — see `slideQueued`. Both here
+        // rather than in `didBegin`, for the reason above: `slide` swaps the body.
+        if isOnGround, !isDiving {
+            if dog.physicsBody?.usesPreciseCollisionDetection == true {
+                dog.physicsBody?.usesPreciseCollisionDetection = false
+            }
+            if slideQueued, !isSliding, !isLaunching {
+                slideQueued = false
+                slide()
+            }
+        }
+
         // Everything below this line belongs to the world `beginPhaseTwo` takes
         // down. Nothing in the flying phase is stepped from here yet — the sky
         // drifts on an action and Benny bobs on one — so this is the whole of
@@ -2444,8 +2531,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // spot it is still a frame away from.
 
         // A slide the player started can't be left half-played under a clip that
-        // has taken the scene over.
+        // has taken the scene over. Nor can one saved for a dive's landing be
+        // allowed to start under it.
         if isSliding { endSlide() }
+        slideQueued = false
 
         runLaunch()
     }
@@ -2866,6 +2955,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             let reannounced = groundedSwapAt >= 0 && lastUpdateTime - groundedSwapAt < Self.reannounceWindow
             groundedSwapAt = -1
             isOnGround = true
+            // Ahead of the early return, so whatever this contact turns out to
+            // be, a dive can't outlive the ground arriving under it.
+            let dived = isDiving
+            isDiving = false
             if reannounced { return }
             // Not while sliding. Swapping in the ducked body makes the ground
             // report a fresh contact, and landing back into a gallop here would
@@ -2873,15 +2966,23 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             // what made the slide impossible to see.
             if !isGameOver, !isSliding {
                 note("landing")
-                squash(xScale: 1.2, yScale: 0.8)
-                puffDust()
+                if dived {
+                    // A dive comes down twice as hard as a jump and should look
+                    // it: a deeper squash, though short of the crash's, and dust
+                    // thrown out both ways rather than one puff behind.
+                    squash(xScale: 1.28, yScale: 0.74)
+                    for offset: CGFloat in [34, 4, -26] { puffDust(behind: offset, scale: 1.4) }
+                } else {
+                    squash(xScale: 1.2, yScale: 0.8)
+                    puffDust()
+                }
                 // Only if he was actually in the air. A contact also arrives the
                 // moment the world is built and again on every retry, with him
                 // standing still on the ground both times.
                 if hasLeftGround {
                     hasLeftGround = false
                     Sfx.shared.play(.land)
-                    Haptics.land()
+                    if dived { Haptics.slam() } else { Haptics.land() }
                 }
                 // Back to running. The jump arc is a one-shot, so without this
                 // he'd hold the landing pose and skate along in it.
@@ -3095,6 +3196,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         groundedSwapAt = -1
         isGameOver = false
         isSliding = false
+        isDiving = false
+        slideQueued = false
         hasLeftGround = false
         touchOrigin = nil
         gestureResolved = false
@@ -3254,6 +3357,10 @@ extension GameScene {
     }
     func labJump() { jump() }
     func labSlide() { slide() }
+    /// A swipe down through the same routing a finger gets: a slide on the
+    /// ground, a dive in the air, a saved slide mid-dive. Not `slide` directly,
+    /// which is what `labSlide` is for.
+    func labSwipeDown() { swipedDown() }
 
     func labHeight(_ piece: ObstacleArt.Piece, tier: CGFloat) -> CGFloat {
         obstacleHeight(piece, at: tier)

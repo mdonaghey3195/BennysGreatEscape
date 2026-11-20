@@ -2,8 +2,8 @@
 //  Haptics.swift
 //  Benny's Great Escape
 //
-//  What the game does in the hand. Three weights for the three things that
-//  happen to Benny, and a tick for the painted buttons.
+//  What the game does in the hand. Three weights for the things that happen
+//  to Benny, and a tick for the painted buttons.
 //
 //  Deliberately not tied to the sound switch. Muting a game in a quiet room is
 //  exactly the moment a player still wants to feel it, and iOS already has a
@@ -43,6 +43,14 @@ enum Haptics {
 
     /// Going down on his side.
     static func slide() {
+        medium.impactOccurred()
+        medium.prepare()
+    }
+
+    /// Paws down out of a dive. The slide's weight: a dive is choosing to hit
+    /// the turf hard, and the landing's light tap would undersell it — but heavy
+    /// stays the crash's alone.
+    static func slam() {
         medium.impactOccurred()
         medium.prepare()
     }

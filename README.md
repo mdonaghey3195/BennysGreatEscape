@@ -88,7 +88,7 @@ Each `FAIL` line names a case and what went wrong. `warn` lines are worth a look
 | --- | --- |
 | J | Every jump prop, hit on every side: early, late, over the top, barely hitting and barely missing |
 | D | Bench, occupied bench and swingset: standing, sliding early or late, jumping out of a slide |
-| L | Landing, back-to-back jumps, mid-air swipes, jumping on touchdown, crash and retry, cliffs |
+| L | Landing, back-to-back jumps, mid-air swipes, jumping on touchdown, crash and retry, cliffs, dives |
 | T | Each prop's clear window at every speed tier, one frame either side of each edge |
 | H | Jumps and slides with the game frozen 50 or 100 ms partway through |
 | C | Whole generated courses, from fixed seeds, played by a bot to score 50 |
