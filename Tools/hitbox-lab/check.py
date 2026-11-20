@@ -211,8 +211,15 @@ def dives(c, run, partial=False):
         c.ok(r['outcome'] == 'CLEAR', 'L-13 a dive once the log is behind him clears it',
              f"{r['outcome']} at f{r.get('hitFrame')}", case=cid)
         if plain_t and r.get('landingFrame'):
-            c.ok(r['landingFrame'] < plain_t, 'L-13 dives before the jump would have landed',
-                 f"touched down at f{r['landingFrame']}, a plain jump at f{plain_t}", case=cid)
+            t = r['landingFrame']
+            # The frames either side of where the dive should have come down,
+            # and the ground contacts as the physics reported them, so a late
+            # touchdown can be read straight off the log.
+            frames = ' '.join(f"{s['frame']}:{s['pose']}:{s['paw']:.0f}{'g' if s['grounded'] else ''}"
+                              for s in r.get('trace') or [] if plain_t - 15 <= s['frame'] <= t + 2)
+            c.ok(t < plain_t, 'L-13 dives before the jump would have landed',
+                 f"touched down at f{t}, a plain jump at f{plain_t}; ground {r.get('groundEvents')}; {frames}",
+                 case=cid)
 
     cid = 'L-14-DIVE-INTO-CLIFF'
     r = present(cid)
