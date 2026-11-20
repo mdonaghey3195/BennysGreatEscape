@@ -62,7 +62,7 @@ The course bot answers each obstacle at the middle of its window in seconds: 0.4
   - mid-air swipes never give a second jump;
   - a jump keeps its jump poses and box lifts in flight, including on the touchdown frame and out of a slide;
   - a landing sinks no more than 3pt and bounces no more than 6pt;
-  - a dive (a swipe down in the air) holds `jump_7` to the ground, lands sooner than the jump would have and as cleanly as a jump does, and never gives a second jump; a second swipe made mid-dive slides on touchdown; a jump straight out of a dive's touchdown goes full height; a dive once a log is behind him clears it; and a dive over a cliff's gap ends the run;
+  - a dive (a swipe down in the air) holds `jump_7` to the ground, lands sooner than the jump would have and as cleanly as a jump does, and never gives a second jump; a second swipe made mid-dive slides on touchdown; a jump straight out of a dive's touchdown keeps its jump poses and lifts its box; a dive once a log is behind him clears it; and a dive over a cliff's gap ends the run;
   - no flaky cases.
 - **Speed tiers (T):** one frame inside either edge of a window must clear, or the window has shrunk. Clearing one frame outside warns that it grew; the edge itself only warns if it changes.
 - **Hitches (H):** a stall must never turn a clear into a hit. Each H case is compared with the J or D case it copies.

@@ -870,12 +870,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // The box follows the drawing here as it does through the arc.
         wearJumpBody(frame: Self.divePose)
 
+        // How he comes down onto the turf at this speed is `update`'s to handle:
+        // see the dive's last frame there.
         guard let physics = dog.physicsBody else { return }
-        // Twice as fast as anything else in the game moves, at a ground that is
-        // a line with no thickness. The precise test keeps the touchdown on the
-        // turf rather than a frame's travel through it. For the fall alone:
-        // `update` switches it off again once he is down.
-        physics.usesPreciseCollisionDetection = true
         physics.velocity = CGVector(dx: 0, dy: min(physics.velocity.dy, -Layout.diveSpeed * launchVelocity))
     }
 
@@ -2064,17 +2061,12 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             if dog.position.y < standing { dog.position.y = standing }
         }
 
-        // Down from a dive. The precise collision test was for the fall alone,
-        // and a slide saved during it plays now — see `slideQueued`. Both here
-        // rather than in `didBegin`, for the reason above: `slide` swaps the body.
-        if isOnGround, !isDiving {
-            if dog.physicsBody?.usesPreciseCollisionDetection == true {
-                dog.physicsBody?.usesPreciseCollisionDetection = false
-            }
-            if slideQueued, !isSliding, !isLaunching {
-                slideQueued = false
-                slide()
-            }
+        // Down from a dive, with a slide saved during it: play it now — see
+        // `slideQueued`. Here rather than in `didBegin`, for the reason above:
+        // `slide` swaps the body.
+        if slideQueued, isOnGround, !isDiving, !isSliding, !isLaunching {
+            slideQueued = false
+            slide()
         }
 
         // Everything below this line belongs to the world `beginPhaseTwo` takes
@@ -2200,6 +2192,26 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
                 if isSliding { endSlide() }
             } else {
                 ground.physicsBody?.categoryBitMask = PhysicsCategory.ground
+            }
+        }
+
+        // The last frame of a dive. Coming down at twice a jump's speed, the box
+        // ends the physics step as much as a whole frame's fall inside the turf,
+        // and being pushed back out of it threw him 16–20pt back into the air —
+        // the Hitbox Lab measured exactly that, against under 6pt for a jump,
+        // and the contact flickering with it cost him the next jump. So on the
+        // frame that would carry him into the turf he is set down a few points
+        // above it at a jump's own landing speed, and the physics lands him the
+        // way it lands every jump. Here, after the cliff check, so a gap that
+        // has just switched the turf off still swallows him.
+        if isDiving, ground.physicsBody?.categoryBitMask == PhysicsCategory.ground,
+           let body = dog.physicsBody, body.velocity.dy < 0 {
+            let dt = CGFloat(delta)
+            let boxFloor = dog.position.y - Layout.dogSize.height * (0.5 - dogBodyLift)
+            let gap = boxFloor - Layout.dogGroundLine
+            if gap <= -body.velocity.dy * dt {
+                dog.position.y -= max(0, gap - launchVelocity * dt / 2)
+                body.velocity = CGVector(dx: 0, dy: -launchVelocity)
             }
         }
 

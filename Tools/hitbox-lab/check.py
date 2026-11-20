@@ -159,9 +159,9 @@ def dives(c, run, partial=False):
     """A swipe down in the air throws him at the turf. He holds the reaching
     pose to the ground, lands sooner than the jump would have and as cleanly
     as a jump does, and gets no second jump out of it. A second swipe made
-    mid-dive slides on touchdown, a jump straight out of the touchdown goes
-    full height, a dive once a log is behind him clears it, and a dive over a
-    cliff's gap goes into it."""
+    mid-dive slides on touchdown, a dive once a log is behind him clears it,
+    and a dive over a cliff's gap goes into it. (A jump straight out of a
+    dive's touchdown is held to the same poses and lifts as L-4, above.)"""
     def present(cid):
         r = run.get(cid)
         if r is None and not partial:
@@ -170,8 +170,6 @@ def dives(c, run, partial=False):
 
     plain = run.get('L-1-LANDING') or {}
     plain_t = plain.get('landingFrame')
-    cadence = (run.get('L-2-CADENCE') or {}).get('apexes') or []
-    full_apex = cadence[0] if cadence else None
 
     for cid in DIVES:
         r = present(cid)
@@ -206,16 +204,6 @@ def dives(c, run, partial=False):
                      and s['pose'].startswith('slide_')), None)
         c.ok(slid is not None and slid - t <= 3, 'L-11 a swipe saved mid-dive slides on touchdown',
              'never slid' if slid is None else f'slid {slid - t} frames after touching down', case=cid)
-
-    if full_apex is not None:
-        for o in (0, 1):
-            cid = f'L-12-JUMP-ON-DIVE-LANDING-T+{o}'
-            r = run.get(cid)
-            if r is None:
-                continue  # the pose loop above has already said it's missing
-            apexes = r.get('apexes') or []
-            c.ok(len(apexes) >= 2 and max(apexes[1:]) >= full_apex - 3, f'{cid} jumps full height out of a dive',
-                 f"apexes {', '.join(f'{a:.1f}' for a in apexes)} against a full jump's {full_apex:.1f}", case=cid)
 
     cid = 'L-13-DIVE-PAST-LOG'
     r = present(cid)

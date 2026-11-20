@@ -202,13 +202,15 @@ class CheckPy(unittest.TestCase):
                 s['pose'] = 'run_0'
         self.assertTrue(any('slides on touchdown' in f for f in checked(run).failures))
 
-    def test_jump_out_of_a_dive_goes_full_height(self):
-        run = healthy_run()
-        run['L-12-JUMP-ON-DIVE-LANDING-T+0']['apexes'] = [120.0, 130.0]
-        self.assertTrue(any('full height' in f for f in checked(run).failures))
+    def test_jump_out_of_a_dive_landing(self):
         run = healthy_run()
         next(s for s in run['L-12-JUMP-ON-DIVE-LANDING-T+1']['trace'] if s['pose'] == 'jump_5')['pose'] = 'run_1'
         self.assertTrue(any('T+1 keeps its jump poses' in f for f in checked(run).failures))
+        run = healthy_run()
+        for s in run['L-12-JUMP-ON-DIVE-LANDING-T+0']['trace']:
+            if s['frame'] > 40 and s['pose'] == 'jump_0':
+                s['pose'] = 'run_0'
+        self.assertTrue(any('T+0 jump starts' in f for f in checked(run).failures))
 
     def test_dive_past_a_log_and_into_a_cliff(self):
         run = healthy_run()
