@@ -179,6 +179,15 @@ extension GameScene {
         /// go. Buying clearance beyond here means `Layout.openingSpeed`, not this.
         static let jumpHeight: CGFloat = 180 * worldScale
 
+        /// How hard a dive throws Benny at the turf, as a multiple of the jump's
+        /// own launch speed — so retuning `jumpHeight` or gravity keeps the dive
+        /// in proportion rather than leaving it a number that used to feel right.
+        ///
+        /// Twice brings him down from the apex in about a tenth of a second, where
+        /// falling would take 0.46. That is about six frames: quick enough to read
+        /// as a decision rather than a fall, and still long enough to be seen.
+        static let diveSpeed: CGFloat = 2
+
         /// How far a painted obstacle is pushed below the turf line by default.
         ///
         /// Has to clear the 8pt dark cut-turf edge drawn by `makeGround`, not just

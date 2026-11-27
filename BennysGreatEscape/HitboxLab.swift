@@ -47,7 +47,10 @@ enum LabPiece: String {
     }
 }
 
-enum LabAction: String { case jump, slide, none }
+/// `swipeDown` goes through the game's own routing — a slide on the ground, a
+/// dive in the air, a slide saved for the landing mid-dive — where `slide` calls
+/// the slide directly.
+enum LabAction: String { case jump, slide, swipeDown, none }
 
 enum LabInput {
     /// Frames counted from the trigger; 0 is the trigger frame itself.
@@ -1033,6 +1036,7 @@ final class HitboxLab {
             switch action {
             case .jump: scene.labJump()
             case .slide: scene.labSlide()
+            case .swipeDown: scene.labSwipeDown()
             case .none: break
             }
         }
@@ -1473,6 +1477,60 @@ extension HitboxLab {
         pairCase.inputs = [.at(0, .slide), .whenCleared(0, .jump)]
         pairCase.maxFrames = 300
         cases.append(pairCase)
+
+        // Dives: a swipe down in mid-air. Off the launch, on the climb, at the
+        // top and on the way down; a second swipe saved for the landing; a jump
+        // straight out of a dive's touchdown; a dive the moment a log is behind
+        // him, which is what the dive is for; and one over a cliff's gap, which
+        // is the player's own to lose.
+        for f in [1, 3, 5, 7] {
+            var c = LabCase(id: "L-10-DIVE-jump_\(f)")
+            c.inputs = [.at(0, .jump), .onPose("jump_\(f)", .swipeDown)]
+            // From the apex is the hardest he ever lands, so that is the
+            // touchdown worth looking at.
+            c.freeze = f == 5 ? .landing([-1, 0, 1]) : .none
+            c.repeats = 1
+            c.maxFrames = 100
+            cases.append(c)
+        }
+
+        var diveSlide = LabCase(id: "L-11-DIVE-THEN-SLIDE")
+        // The second swipe comes on the dive's first frame, a hundred points up,
+        // so the only thing it can be is a slide saved for the landing.
+        diveSlide.inputs = [.at(0, .jump), .onPose("jump_4", .swipeDown), .onPose("jump_7", .swipeDown)]
+        diveSlide.freeze = .poses(["slide_\(max(0, GameScene.DogArt.slideFrames.count - 1))"])
+        diveSlide.repeats = 1
+        diveSlide.maxFrames = 160
+        cases.append(diveSlide)
+
+        for o in [0, 1] {
+            var c = LabCase(id: "L-12-JUMP-ON-DIVE-LANDING-T+\(o)")
+            c.inputs = [.at(0, .jump), .onPose("jump_4", .swipeDown), .onLanding(o, .jump)]
+            c.freeze = .none
+            c.repeats = 2
+            c.maxFrames = 160
+            cases.append(c)
+        }
+
+        var pastLog = LabCase(id: "L-13-DIVE-PAST-LOG")
+        let logEdges = predicted[.log]!
+        pastLog.piece = .log
+        pastLog.tier = opening
+        pastLog.target = "log@\(openTier)"
+        pastLog.d = .plan("centre", (logEdges.late + logEdges.earlyBefore) / 2)
+        pastLog.inputs = [.at(0, .jump), .whenCleared(0, .swipeDown)]
+        pastLog.freeze = .landing([0])
+        cases.append(pastLog)
+
+        var cliffDive = LabCase(id: "L-14-DIVE-INTO-CLIFF")
+        cliffDive.piece = .cliff
+        cliffDive.d = .fixed(airtimeDistance / 2)
+        cliffDive.inputs = [.at(0, .jump), .onPose("jump_4", .swipeDown)]
+        cliffDive.intercept = false
+        cliffDive.freeze = .none
+        cliffDive.repeats = 1
+        cliffDive.maxFrames = 120
+        cases.append(cliffDive)
 
         // T — the window edges at every speed tier, from the sweeps (winLo and
         // winHi in plan.json). IN is one frame of travel inside an edge and must

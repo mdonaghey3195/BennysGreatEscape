@@ -140,10 +140,100 @@ def courses(c, run):
                 c.warn(f'{cid}: {n}')
 
 
+def touchdown(trace, t):
+    """How far the paws went into the turf around touchdown frame `t`, and how
+    far they popped back up above where they came to rest."""
+    near = [s for s in trace if t - 2 <= s['frame'] <= t + 12]
+    rest = trace[-1]['paw']
+    sink = min((s['paw'] for s in near), default=rest)
+    bounce = max((s['paw'] for s in near if s['frame'] > t), default=rest) - rest
+    return sink, bounce
+
+
+# The L-10 cases: a dive off each of these jump poses.
+DIVES = [f'L-10-DIVE-jump_{f}' for f in (1, 3, 5, 7)]
+DIVE_POSE = 'jump_7'
+
+
+def dives(c, run, partial=False):
+    """A swipe down in the air throws him at the turf. He holds the reaching
+    pose to the ground, lands sooner than the jump would have and as cleanly
+    as a jump does, and gets no second jump out of it. A second swipe made
+    mid-dive slides on touchdown, a dive once a log is behind him clears it,
+    and a dive over a cliff's gap goes into it. (A jump straight out of a
+    dive's touchdown is held to the same poses and lifts as L-4, above.)"""
+    def present(cid):
+        r = run.get(cid)
+        if r is None and not partial:
+            c.ok(False, cid, 'missing from this run', case=cid)
+        return r
+
+    plain = run.get('L-1-LANDING') or {}
+    plain_t = plain.get('landingFrame')
+
+    for cid in DIVES:
+        r = present(cid)
+        if r is None:
+            continue
+        if not r.get('trace') or not r.get('landingFrame'):
+            c.ok(False, cid, 'no trace or never landed', case=cid)
+            continue
+        trace, t = r['trace'], r['landingFrame']
+        apexes = r.get('apexes') or [0.0]
+        c.ok(max(apexes) <= apexes[0] + 3, f'{cid} no double jump',
+             'apexes ' + ', '.join(f'{a:.1f}' for a in apexes), case=cid)
+        if plain_t:
+            c.ok(t < plain_t, f'{cid} lands sooner than a jump',
+                 f'touched down at f{t}, a plain jump at f{plain_t}', case=cid)
+        pose = cid.rsplit('-', 1)[1]
+        trigger = next((s['frame'] for s in trace if s['frame'] > 0 and s['pose'] == pose), None)
+        if trigger is None:
+            c.ok(False, f'{cid} dives', f'{pose} was never shown, so the swipe never came', case=cid)
+        else:
+            off = [f"f{s['frame']}:{s['pose']}" for s in trace if trigger < s['frame'] < t and s['pose'] != DIVE_POSE]
+            c.ok(not off, f'{cid} holds {DIVE_POSE} to the ground', ', '.join(off[:6]), case=cid)
+        sink, bounce = touchdown(trace, t)
+        c.ok(sink >= -3.0, f'{cid} sinks no more than 3pt into the turf', f'paw reached {sink:.1f}pt', case=cid)
+        c.ok(bounce <= 6.0, f'{cid} bounces no more than 6pt', f'rose {bounce:.1f}pt above rest', case=cid)
+
+    cid = 'L-11-DIVE-THEN-SLIDE'
+    r = present(cid)
+    if r is not None:
+        t = r.get('landingFrame')
+        slid = next((s['frame'] for s in r.get('trace') or [] if t is not None and s['frame'] >= t
+                     and s['pose'].startswith('slide_')), None)
+        c.ok(slid is not None and slid - t <= 3, 'L-11 a swipe saved mid-dive slides on touchdown',
+             'never slid' if slid is None else f'slid {slid - t} frames after touching down', case=cid)
+
+    cid = 'L-13-DIVE-PAST-LOG'
+    r = present(cid)
+    if r is not None:
+        c.ok(r['outcome'] == 'CLEAR', 'L-13 a dive once the log is behind him clears it',
+             f"{r['outcome']} at f{r.get('hitFrame')}", case=cid)
+        if plain_t and r.get('landingFrame'):
+            t = r['landingFrame']
+            # The frames either side of where the dive should have come down,
+            # and the ground contacts as the physics reported them, so a late
+            # touchdown can be read straight off the log.
+            frames = ' '.join(f"{s['frame']}:{s['pose']}:{s['paw']:.0f}{'g' if s['grounded'] else ''}"
+                              for s in r.get('trace') or [] if plain_t - 15 <= s['frame'] <= t + 2)
+            c.ok(t < plain_t, 'L-13 dives before the jump would have landed',
+                 f"touched down at f{t}, a plain jump at f{plain_t}; ground {r.get('groundEvents')}; {frames}",
+                 case=cid)
+
+    cid = 'L-14-DIVE-INTO-CLIFF'
+    r = present(cid)
+    if r is not None:
+        c.ok(r['outcome'] == 'GAMEOVER', "L-14 a dive into a cliff's gap ends the run",
+             f"{r['outcome']}", case=cid)
+
+
 def invariants(c, run, partial=False):
     if partial:
         # Only the invariants whose cases were actually run.
         wanted = {'L-0-JUMP', 'L-2-CADENCE', 'L-1-LANDING', 'L-4-JUMP-ON-T+0', 'L-4-JUMP-ON-T+1', 'L-6-JUMP-OUT-OF-SLIDE'}
+        wanted |= set(DIVES) | {'L-11-DIVE-THEN-SLIDE', 'L-12-JUMP-ON-DIVE-LANDING-T+0',
+                                'L-12-JUMP-ON-DIVE-LANDING-T+1', 'L-13-DIVE-PAST-LOG', 'L-14-DIVE-INTO-CLIFF'}
         if not wanted & set(run):
             flaky = [cid for cid, r in run.items() if r['outcome'] == 'FLAKY']
             c.ok(not flaky, 'no flaky cases', ', '.join(flaky))
@@ -184,8 +274,10 @@ def invariants(c, run, partial=False):
                  'apexes ' + ', '.join(f'{a:.1f}' for a in r['apexes']), case=cid)
 
     # A jump keeps its jump poses until it lands — on the touchdown frame, one
-    # frame after it, and straight out of a slide.
-    for cid in ('L-4-JUMP-ON-T+0', 'L-4-JUMP-ON-T+1', 'L-6-JUMP-OUT-OF-SLIDE'):
+    # frame after it, straight out of a slide, and straight out of a dive's
+    # touchdown.
+    for cid in ('L-4-JUMP-ON-T+0', 'L-4-JUMP-ON-T+1', 'L-6-JUMP-OUT-OF-SLIDE',
+                'L-12-JUMP-ON-DIVE-LANDING-T+0', 'L-12-JUMP-ON-DIVE-LANDING-T+1'):
         r = run.get(cid)
         if not r or not r.get('trace'):
             if not partial:
@@ -193,8 +285,8 @@ def invariants(c, run, partial=False):
             continue
         trace = r['trace']
         # The second jump starts at the first jump_0 after the first touchdown
-        # (L-4), or at the first jump_0 at all (L-6).
-        start_after = (r.get('landingFrame') or 0) if cid.startswith('L-4') else 0
+        # (L-4, L-12), or at the first jump_0 at all (L-6).
+        start_after = (r.get('landingFrame') or 0) if cid.startswith(('L-4', 'L-12')) else 0
         starts = [s['frame'] for s in trace if s['pose'] == 'jump_0' and s['frame'] >= start_after]
         if not starts:
             c.ok(False, f'{cid} jump starts', 'no jump_0 pose after the input', case=cid)
@@ -213,16 +305,14 @@ def invariants(c, run, partial=False):
     # Landing: no deep sink, no big pop back up.
     land = run.get('L-1-LANDING')
     if land and land.get('trace') and land.get('landingFrame'):
-        t = land['landingFrame']
-        near = [s for s in land['trace'] if t - 2 <= s['frame'] <= t + 12]
-        rest = land['trace'][-1]['paw']
-        sink = min(s['paw'] for s in near)
-        bounce = max(s['paw'] for s in near if s['frame'] > t) - rest
+        sink, bounce = touchdown(land['trace'], land['landingFrame'])
         c.ok(sink >= -3.0, 'L-1 landing sinks no more than 3pt into the turf', f'paw reached {sink:.1f}pt', case='L-1-LANDING')
         c.ok(bounce <= 6.0, 'L-1 landing bounces no more than 6pt', f'rose {bounce:.1f}pt above rest', case='L-1-LANDING')
     else:
         if not partial:
             c.ok(False, 'L-1-LANDING', 'missing, no trace or no landing', case='L-1-LANDING')
+
+    dives(c, run, partial)
 
     flaky = [cid for cid, r in run.items() if r['outcome'] == 'FLAKY']
     c.ok(not flaky, 'no flaky cases', ', '.join(flaky))
