@@ -2156,7 +2156,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         logHitch(since: lastUpdateTime, now: currentTime)
         // Clamped so a stall — backgrounding, a slow first frame — can't advance
         // the spawner by a huge step and dump a wall of obstacles at once.
-        let delta = min(currentTime - lastUpdateTime, 1.0 / 30)
+        let elapsed = currentTime - lastUpdateTime
+        let delta = min(elapsed, 1.0 / 30)
+        // EXPERIMENT: the world moves on the same clock Benny does.
+        let motion = min(elapsed, 0.25)
         lastUpdateTime = currentTime
 
         // A lifted jump box must not outlive the jump: standing on the turf with
@@ -2202,7 +2205,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         // The man is pinned to the turf rather than given a slide of his own, so
         // that when the world does start moving he can't moonwalk against it.
-        let step = gameSpeed * worldScroll * CGFloat(delta)
+        let step = gameSpeed * worldScroll * CGFloat(motion)
 
         // A slide that has run its distance waits here until getting up is
         // safe.
