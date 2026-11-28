@@ -179,14 +179,52 @@ extension GameScene {
         /// go. Buying clearance beyond here means `Layout.openingSpeed`, not this.
         static let jumpHeight: CGFloat = 180 * worldScale
 
-        /// How hard a dive throws Benny at the turf, as a multiple of the jump's
-        /// own launch speed — so retuning `jumpHeight` or gravity keeps the dive
-        /// in proportion rather than leaving it a number that used to feel right.
+        /// The most extra ground a slide will hold itself down for, waiting on
+        /// something overhead to finish going past.
         ///
-        /// Twice brings him down from the apex in about a tenth of a second, where
-        /// falling would take 0.46. That is about six frames: quick enough to read
-        /// as a decision rather than a fall, and still long enough to be seen.
-        static let diveSpeed: CGFloat = 2
+        /// The hold is open-ended by design — it ends when standing up is safe,
+        /// which is the only answer a player can predict — so this is purely a
+        /// stop against a slide that somehow never clears: a prop that failed
+        /// to scroll, a speed of zero. A slide and a half, which no honest
+        /// obstacle comes close to needing.
+        static let slideHoldLimit: CGFloat = 480 * worldScale
+
+        /// How long before touchdown a down-swipe stops meaning "dive" and
+        /// starts meaning "slide, the moment you land".
+        ///
+        /// A player who swipes down as Benny comes in to land wants the slide
+        /// he is about to be able to do, not a dive worth a few points of
+        /// height. Before this they got the dive — which from that low is
+        /// invisible — and the slide they asked for never happened, which read
+        /// as the game dropping the input.
+        ///
+        /// 0.12s, about seven frames. Long enough to cover a swipe aimed at the
+        /// landing and the frame or two the touchdown itself takes to register,
+        /// short enough that a dive taken from any useful height is still a
+        /// dive.
+        static let slideBuffer: TimeInterval = 0.12
+
+        /// The kick that starts a dive, as a multiple of the jump's own launch
+        /// speed — so retuning `jumpHeight` or gravity keeps the dive in
+        /// proportion rather than leaving a number that used to feel right.
+        ///
+        /// Only enough to kill a rise and turn him over; `diveWeight` is what
+        /// actually brings him down. This was 2 and was the whole of the dive,
+        /// set in a single frame, which is why it did not look like anything: he
+        /// never went down, he was simply somewhere lower on the next frame. A
+        /// body cannot change speed instantly, and an eye knows it even when it
+        /// could not say so.
+        static let diveKick: CGFloat = 0.55
+
+        /// How much heavier than usual Benny falls once he has committed to a
+        /// dive, as a multiple of the world's gravity.
+        ///
+        /// Four. From the apex that is about 0.18s to the turf, against 0.46s
+        /// for letting go — so the dive is still two and a half times quicker
+        /// than falling, and arrives harder than a jump ever does. The
+        /// difference is that it is now a fall, with a fall's gathering speed,
+        /// rather than a change of position.
+        static let diveWeight: CGFloat = 4
 
         /// How far a painted obstacle is pushed below the turf line by default.
         ///

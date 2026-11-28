@@ -184,6 +184,16 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     /// inside a contact callback re-enters that callback.
     private var slideQueued = false
 
+    /// A slide that has run its distance and is waiting for the way up to be
+    /// clear — see `riseWhenClear`. The ground Benny has covered waiting is
+    /// held alongside it, so the wait can be capped.
+    private var slideWaitingToRise = false
+    private var slideHeldFor: CGFloat = 0
+
+    /// Set when a touchdown turns out to have been a dive, and cleared by the
+    /// next `update` — see the bounce guard there.
+    private var landedFromDive = false
+
     /// Reported so the SwiftUI layer can show the "swipe down" hint the first
     /// time a rail actually appears, rather than up front where it means little.
     var onFirstLowObstacle: (() -> Void)?
@@ -652,11 +662,33 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func swipedDown() {
         if isOnGround {
             slide()
-        } else if isDiving {
+        } else if isDiving || aboutToLand {
             slideQueued = true
         } else {
             dive()
         }
+    }
+
+    /// Whether the turf is close enough that a down-swipe is really about the
+    /// landing — see `Layout.slideBuffer`.
+    ///
+    /// Worked out from where he is and how fast he is falling, with the game's
+    /// own gravity, rather than from a height that would mean different things
+    /// at different points of the arc: `½gt² - vt - altitude = 0`, solved for
+    /// the positive root.
+    private var aboutToLand: Bool {
+        guard let body = dog.physicsBody, body.velocity.dy <= 0 else { return false }
+        // Over a cliff's gap the turf is switched off and he is not landing on
+        // anything — diving into it is a real choice, so leave it alone.
+        guard ground.physicsBody?.categoryBitMask == PhysicsCategory.ground else { return false }
+
+        let altitude = dog.position.y - (Layout.dogGroundLine + Layout.dogSize.height / 2)
+        guard altitude > 0 else { return true }
+
+        let gravity = gravityAcceleration
+        let speed = body.velocity.dy
+        let landing = (speed + (speed * speed + 2 * gravity * altitude).squareRoot()) / gravity
+        return TimeInterval(landing) <= Layout.slideBuffer
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -704,7 +736,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         // Getting up quicker than going down is both how it works and what keeps
         // the flat pose on screen for most of the slide.
-        var perDown: TimeInterval = 0.05
+        // 0.06, up from 0.05. Going down is the part that is watched — it is
+        // the answer to the swipe — and it was over in a third of a second.
+        // This is as long as it can be: the hold below is what gives way, and
+        // at the top scroll speed the whole slide is only 0.81s.
+        var perDown: TimeInterval = 0.06
         var perUp: TimeInterval = 0.035
         let minimumHold: TimeInterval = 0.12
 
@@ -722,28 +758,100 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let hold = max(minimumHold,
                        total - (perDown + perUp) * Double(down.count))
 
+        // The drop is weighted rather than even, longest on the first pose and
+        // shortest on the last.
+        //
+        // Even timing is what made it look wrong. The poses step down the
+        // drawing in roughly equal heights, so holding each for the same length
+        // is a body descending at a constant rate — which nothing does. Weight
+        // falls off twice over the entry and he reads as going down under his
+        // own weight: hesitating at the top, gathering as he goes.
+        //
+        // Built from the count rather than written out, so the art can gain or
+        // lose a frame without this becoming wrong.
+        let steepest = 1.6, shallowest = 0.8
+        let shape: [Double] = down.count < 2
+            ? [1]
+            : down.indices.map {
+                steepest - (steepest - shallowest) * Double($0) / Double(down.count - 1)
+            }
+        let shapeTotal = shape.reduce(0, +)
+        let entry = perDown * Double(down.count)
+
         var steps: [SKAction] = []
-        for texture in down {
+        for (index, texture) in down.enumerated() {
             steps.append(.setTexture(texture))
-            steps.append(.wait(forDuration: perDown))
+            steps.append(.wait(forDuration: entry * shape[index] / shapeTotal))
         }
         if let flat = frames.last {
             steps.append(.setTexture(flat))
             steps.append(.wait(forDuration: hold))
         }
-        for texture in down.reversed() {
-            steps.append(.setTexture(texture))
-            steps.append(.wait(forDuration: perUp))
-        }
-        steps.append(.run { [weak self] in self?.endSlide() })
+        // And then he gets up — but only once there is room to. The rising
+        // frames are not part of this sequence; `update` plays them through
+        // `riseFromSlide` on the first frame standing up would not put him
+        // into something. See `slideWaitingToRise`.
+        steps.append(.run { [weak self] in
+            self?.slideWaitingToRise = true
+            self?.slideHeldFor = 0
+        })
 
         dog.childNode(withName: "body")?.removeAction(forKey: "gait")
         dog.childNode(withName: "body")?.run(.sequence(steps), withKey: "gait")
     }
 
+    /// Stands Benny up out of a slide: the entry frames backwards, then the
+    /// slide proper ends on the last of them.
+    private func riseFromSlide() {
+        slideWaitingToRise = false
+        let frames = DogArt.slideFrames
+        guard isSliding, let body = dog.childNode(withName: "body"), frames.count > 1 else {
+            endSlide()
+            return
+        }
+        var steps: [SKAction] = []
+        for texture in frames.dropLast().reversed() {
+            steps.append(.setTexture(texture))
+            steps.append(.wait(forDuration: slideRise / Double(frames.count - 1)))
+        }
+        steps.append(.run { [weak self] in self?.endSlide() })
+        body.removeAction(forKey: "gait")
+        body.run(.sequence(steps), withKey: "gait")
+    }
+
+    /// How long getting up takes. The same 0.035 a frame the slide was built
+    /// with, now that the rise is timed on its own rather than as the tail of
+    /// one sequence.
+    private var slideRise: TimeInterval { 0.035 * Double(max(1, DogArt.slideFrames.count - 1)) }
+
+    /// Whether standing up right now would put Benny inside something.
+    ///
+    /// Asked of the physics world rather than of the obstacles' own numbers, so
+    /// it is the same boxes that decide a collision that decide this, and it
+    /// needs nothing recorded on the node — the Hitbox Lab's bookkeeping is
+    /// `DEBUG` only and the game ships without it.
+    private var standingWouldHit: Bool {
+        let size = Layout.dogSize
+        let give = DogArt.forgivenessFraction
+        let width = size.width * (DogArt.bodyWidthFraction - give)
+        let centre = dog.position.x + size.width * (DogArt.bodyOffsetXFraction - give / 2)
+        let box = CGRect(x: centre - width / 2, y: Layout.dogGroundLine,
+                         width: width, height: size.height * DogArt.bodyHeightFraction)
+        var blocked = false
+        physicsWorld.enumerateBodies(in: box) { body, stop in
+            if body.categoryBitMask & PhysicsCategory.obstacle != 0 {
+                blocked = true
+                stop.pointee = true
+            }
+        }
+        return blocked
+    }
+
     private func endSlide() {
         guard isSliding else { return }
         isSliding = false
+        slideWaitingToRise = false
+        slideHeldFor = 0
         dog.removeAction(forKey: "slideDust")
         setDucked(false)
         guard let body = dog.childNode(withName: "body"), DogArt.frames.count > 1 else { return }
@@ -825,6 +933,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         if isSliding { endSlide() }
         guard isOnGround else { return }
         hasLeftGround = true
+        // A jump taken on the frame a dive touched down is a jump, not the
+        // physics bouncing him out of the turf — see the guard in `update`,
+        // which would otherwise take the rise straight back off him.
+        landedFromDive = false
         note("jump")
         Sfx.shared.play(.jump)
         // Velocity is set directly from the desired apex rather than applying an
@@ -873,7 +985,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // How he comes down onto the turf at this speed is `update`'s to handle:
         // see the dive's last frame there.
         guard let physics = dog.physicsBody else { return }
-        physics.velocity = CGVector(dx: 0, dy: min(physics.velocity.dy, -Layout.diveSpeed * launchVelocity))
+        // Only the commitment. `update` carries the rest — see `diveWeight`.
+        physics.velocity = CGVector(dx: 0, dy: min(physics.velocity.dy, -Layout.diveKick * launchVelocity))
     }
 
     /// `v = sqrt(2·a·h)`. SpriteKit gravity is in m/s² against a 150 points-per-
@@ -2050,6 +2163,18 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // a raised floor, Benny hovers and the contact flickers. Put back here
         // rather than in `didBegin`, because replacing a body from inside a
         // contact callback re-enters that callback.
+        // A dive that got through the set-down below — see "the last frame of a
+        // dive" — has been resolved by the physics instead, which pushes a box
+        // that ended the step inside the turf back out of it and sends him up.
+        // The set-down catches the common case a frame early; this catches the
+        // rest, whatever speed he arrived at, because a dive must never bounce.
+        if landedFromDive {
+            landedFromDive = false
+            let standing = Layout.dogGroundLine + Layout.dogSize.height / 2
+            if dog.position.y < standing { dog.position.y = standing }
+            if let body = dog.physicsBody, body.velocity.dy > 0 { body.velocity.dy = 0 }
+        }
+
         if isOnGround, dogBodyLift != 0, !isSliding {
             wearDogBody(lift: 0)
             // He came down on the lifted floor, so the drawing landed that far
@@ -2078,6 +2203,23 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // The man is pinned to the turf rather than given a slide of his own, so
         // that when the world does start moving he can't moonwalk against it.
         let step = gameSpeed * worldScroll * CGFloat(delta)
+
+        // A slide that has run its distance waits here until getting up is
+        // safe.
+        //
+        // The distance a slide covers is a number the player cannot see, and
+        // standing up on it regardless is what put Benny into the back of a
+        // bench he had asked to go under. Holding him down until the way up is
+        // clear makes the game do what the swipe said, which is the only rule
+        // a player can actually learn. `slideHoldLimit` is the stop against a
+        // wait that never ends.
+        if slideWaitingToRise {
+            slideHeldFor += step
+            if !standingWouldHit || slideHeldFor > Layout.slideHoldLimit {
+                riseFromSlide()
+            }
+        }
+
         #if DEBUG
         if labLogsSpawns { labScroll += Double(step) }
         #endif
@@ -2157,6 +2299,16 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // changes nothing anywhere else.
         dog.childNode(withName: "body")?.speed =
             (isOnGround && !isSliding) ? gameSpeed / Layout.openingSpeed * worldScroll : 1
+
+        // What takes a dive down.
+        //
+        // The kick in `dive` only turns him over; the speed is gathered here,
+        // frame by frame, the way a fall gathers it. Done in one assignment —
+        // which is how the dive first worked — he went from rising to flat out
+        // between two frames, and nothing drawn on top of that reads as weight.
+        if isDiving, !isOnGround, let falling = dog.physicsBody {
+            falling.velocity.dy -= (Layout.diveWeight - 1) * gravityAcceleration * CGFloat(delta)
+        }
 
         // Everything above keeps the title screen alive; everything below is the
         // game proper and waits for the first tap.
@@ -2548,6 +2700,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         // allowed to start under it.
         if isSliding { endSlide() }
         slideQueued = false
+        // Nor can a dive's landing still be waiting to be tidied up: from here
+        // the clip owns where Benny stands.
+        landedFromDive = false
 
         runLaunch()
     }
@@ -2972,6 +3127,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
             // be, a dive can't outlive the ground arriving under it.
             let dived = isDiving
             isDiving = false
+            if dived { landedFromDive = true }
             if reannounced { return }
             // Not while sliding. Swapping in the ducked body makes the ground
             // report a fresh contact, and landing back into a gallop here would
@@ -3210,7 +3366,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         isGameOver = false
         isSliding = false
         isDiving = false
+        landedFromDive = false
         slideQueued = false
+        slideWaitingToRise = false
+        slideHeldFor = 0
         hasLeftGround = false
         touchOrigin = nil
         gestureResolved = false
