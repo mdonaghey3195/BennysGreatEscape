@@ -1502,8 +1502,8 @@
   },
   "T-logStack@290-LO-IN": {
    "d": 118.333,
-   "hitFrame": 38,
-   "outcome": "FLAKY"
+   "hitFrame": null,
+   "outcome": "CLEAR"
   },
   "T-logStack@290-LO-OUT": {
    "d": 108.667,
